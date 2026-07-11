@@ -23,13 +23,6 @@ VORTEX_HOME_WSL = "/home/dark_hacker/hackathon-project/vendor/vortex"
 PROJECT_NAME = "llm_comprehension_test"
 N = 8
 
-CUDA_UNEVALUABLE_EXPRS = {
-    'cg::this_thread_block()',  # CUDA cooperative groups handle
-    'cg::this_grid()',
-    'cg::coalesced_threads()',
-    'SharedMemory<T>()',        # CUDA dynamic shared memory handle
-}
-
 def run_wsl(cmd: str, check: bool = False) -> subprocess.CompletedProcess:
     return subprocess.run(
         ["wsl.exe", "-e", "bash", "-c", cmd],
