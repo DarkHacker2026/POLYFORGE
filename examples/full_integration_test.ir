@@ -1,0 +1,16 @@
+# Full integration test — exercises all 4 learned operation types in one run.
+#
+# The compiler growth loop will:
+#   1. Look up (or learn) an ADD rule via the LLM + real Vortex simx
+#   2. Look up (or learn) a MUL rule via the LLM + real Vortex simx
+#   3. Look up (or learn) a LOAD rule via the LLM + real Vortex simx
+#   4. Look up (or learn) a LOOP rule via the LLM + real Vortex simx
+#      (The loop verifies multi-instruction control-flow with BNE + ADDI)
+#
+# Each operation is independently compiled, run on real hardware (simx),
+# verified for correctness, and cycle-counted before its rule is committed.
+
+r3 = add(r1, r2)
+r4 = mul(r1, r2)
+r5 = load(r6)
+r1 = loop(r1)

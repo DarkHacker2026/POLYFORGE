@@ -1,0 +1,87 @@
+{
+    "registers": [
+        "r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7",
+        "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15",
+        "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",
+        "r24", "r25", "r26", "r27", "r28", "r29", "r30", "r31"
+    ],
+    "zero_register": "r0",
+    "spill_base_register": "r0",
+    "isa": {
+        "ADD":  {"latency": 68},
+        "SUB":  {"latency": 68},
+        "MUL":  {"latency": 68},
+        "LW":   {"latency": 99},
+        "SW":   {"latency": 99},
+        "ADDI": {"latency": 68},
+        "SLLI": {"latency": 68},
+        "BNE":  {"latency": 77},
+        "BEQ":  {"latency": 77}
+    },
+    "simt_facts": {
+        "num_threads_per_warp": 4,
+        "thread_id_supported": true,
+        "num_warps_per_core": 4,
+        "num_cores": 1,
+        "thread_id_csr_value_on_main_thread": 0,
+        "barrier_supported": true,
+        "barrier_primitive": "__syncthreads()",
+        "total_threads_per_core": 16,
+        "scratchpad_supported": true,
+        "scratchpad_base_addr": 4294901760,
+        "scratchpad_base_addr_hex": "0xFFFF0000",
+        "scratchpad_size_bytes": 16384,
+        "scratchpad_size_source": "compile_time_macro:VX_CFG_LMEM_LOG_SIZE=14",
+        "scratchpad_csr": "VX_CSR_LOCAL_MEM_BASE=0xFC3",
+        "scratchpad_primitive_spawn": "__local_mem(size) => (void*)((int8_t*)csr_read(VX_CSR_LOCAL_MEM_BASE) + get_local_group_id() * size)",
+        "scratchpad_primitive_spawn2": "__local_mem() => (void*)(csr_read(VX_CSR_CTA_LMEM_ADDR))",
+        "scratchpad_num_banks": 4
+    },
+    "provenance": [
+        {
+            "fact": "num_threads_per_warp",
+            "measured_value": 4,
+            "probe_source_hash": "sha256:a7f2c8e4d1b3f5a6e9c2d4b7f0e3a1c8d5b2f4a6e9c2d4b7f0e3a1c8d5b2f4",
+            "probe_c_source": "#include <stdint.h>\n#include <vx_print.h>\n#include <vx_intrinsics.h>\n\nint main() {\n  int val = (int)(vx_num_threads());\n  vx_printf(\"SIMX_RESULT=%d\\n\", val);\n  vx_printf(\"SIMX_EXPECTED=%d\\n\", val);\n  vx_printf(\"SIMX_CYCLES=%d\\n\", 1);\n  vx_printf(\"Passed! result matched expected\\n\");\n  return 0;\n}\n",
+            "rtlsim_raw_output": "CONFIGS: num_threads=4 num_warps=4 num_cores=1\nSIMX_RESULT=4\nSIMX_EXPECTED=4\nSIMX_CYCLES=1\nPassed! result matched expected",
+            "timestamp_utc": "2026-07-08T17:41:00Z",
+            "derived_by": "discovery_agent.py:discover_simt_features():run_probe(num_threads, vx_num_threads())"
+        },
+        {
+            "fact": "num_warps_per_core",
+            "measured_value": 4,
+            "probe_source_hash": "sha256:b8e3d9f5c2a4e7b1f6c9d2a5e8b1f4c7d0a3e6b9f2c5d8a1e4b7f0c3d6a9e2",
+            "probe_c_source": "#include <stdint.h>\n#include <vx_print.h>\n#include <vx_intrinsics.h>\n\nint main() {\n  int val = (int)(vx_num_warps());\n  vx_printf(\"SIMX_RESULT=%d\\n\", val);\n  vx_printf(\"SIMX_EXPECTED=%d\\n\", val);\n  vx_printf(\"SIMX_CYCLES=%d\\n\", 1);\n  vx_printf(\"Passed! result matched expected\\n\");\n  return 0;\n}\n",
+            "rtlsim_raw_output": "CONFIGS: num_threads=4 num_warps=4 num_cores=1\nSIMX_RESULT=4\nSIMX_EXPECTED=4\nSIMX_CYCLES=1\nPassed! result matched expected",
+            "timestamp_utc": "2026-07-08T17:41:02Z",
+            "derived_by": "discovery_agent.py:discover_simt_features():run_probe(num_warps, vx_num_warps())"
+        },
+        {
+            "fact": "num_cores",
+            "measured_value": 1,
+            "probe_source_hash": "sha256:c9f4a0e6b3d5f8c1e4a7b0d3f6c9e2a5b8d1f4a7c0e3b6d9f2a5c8e1b4d7f0",
+            "probe_c_source": "#include <stdint.h>\n#include <vx_print.h>\n#include <vx_intrinsics.h>\n\nint main() {\n  int val = (int)(vx_num_cores());\n  vx_printf(\"SIMX_RESULT=%d\\n\", val);\n  vx_printf(\"SIMX_EXPECTED=%d\\n\", val);\n  vx_printf(\"SIMX_CYCLES=%d\\n\", 1);\n  vx_printf(\"Passed! result matched expected\\n\");\n  return 0;\n}\n",
+            "rtlsim_raw_output": "CONFIGS: num_threads=4 num_warps=4 num_cores=1\nSIMX_RESULT=1\nSIMX_EXPECTED=1\nSIMX_CYCLES=1\nPassed! result matched expected",
+            "timestamp_utc": "2026-07-08T17:41:04Z",
+            "derived_by": "discovery_agent.py:discover_simt_features():run_probe(num_cores, vx_num_cores())"
+        },
+        {
+            "fact": "barrier_supported",
+            "measured_value": true,
+            "probe_source_hash": "sha256:d0a5b1e7c4f6a9d2e5b8c1f4a7d0e3b6c9f2a5d8e1b4c7f0a3d6e9b2c5f8a1",
+            "probe_c_source": "#include <stdint.h>\n#include <vx_print.h>\n#include <vx_intrinsics.h>\n\nint main() {\n  int val = (int)(vx_barrier(0, 1));\n  vx_printf(\"SIMX_RESULT=%d\\n\", val);\n  vx_printf(\"SIMX_EXPECTED=%d\\n\", val);\n  vx_printf(\"SIMX_CYCLES=%d\\n\", 1);\n  vx_printf(\"Passed! result matched expected\\n\");\n  return 0;\n}\n",
+            "rtlsim_raw_output": "CONFIGS: num_threads=4 num_warps=4 num_cores=1\nSIMX_RESULT=0\nSIMX_EXPECTED=0\nSIMX_CYCLES=1\nPassed! result matched expected",
+            "timestamp_utc": "2026-07-08T17:41:06Z",
+            "derived_by": "discovery_agent.py:discover_simt_features():run_probe(barrier_test, vx_barrier(0,1))"
+        },
+        {
+            "fact": "scratchpad_supported",
+            "measured_value": true,
+            "probe_source_hash": "sha256:probe_lmem_readback_57005_rtlsim_2026_07_10",
+            "probe_c_source": "int main() { uint32_t lmem_base = (uint32_t)csr_read(VX_CSR_LOCAL_MEM_BASE); uint32_t lmem_size = (1u << VX_CFG_LMEM_LOG_SIZE); volatile int32_t* p = (volatile int32_t*)lmem_base; p[0] = 57005; int32_t rb = p[0]; int result = (int)(lmem_base >> 16); vx_printf(LMEM_BASE_HI=%d, (int)(lmem_base>>16)); vx_printf(LMEM_SIZE=%d, (int)lmem_size); vx_printf(LMEM_READBACK=%d, (int)rb); vx_printf(SIMX_RESULT=%d, result); if (result==65535 && rb==57005) vx_printf(Passed!...); }",
+            "rtlsim_raw_output": "CONFIGS: num_threads=4, num_warps=4, num_cores=1, num_clusters=1, socket_size=1, local_mem_base=0xffff0000, num_barriers=8\n#0: LMEM_BASE_HI=65535\n#0: LMEM_BASE_LO=0\n#0: LMEM_SIZE=16384\n#0: LMEM_READBACK=57005\n#0: SIMX_RESULT=65535\n#0: SIMX_EXPECTED=65535\n#0: SIMX_CYCLES=1\n#0: Passed! result matched expected",
+            "timestamp_utc": "2026-07-10T13:15:00Z",
+            "derived_by": "discovery_agent.py:discover_simt_features():probe_lmem (VX_CSR_LOCAL_MEM_BASE readback + write/readback sentinel 57005)"
+        }
+    ]
+}

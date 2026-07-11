@@ -1,0 +1,1 @@
+{"rules": {"add": {"pattern": [{"op": "ADD", "dst": "$dst", "src1": "$src1", "src2": "$src2"}]}, "mul": {"pattern": [{"op": "MUL", "dst": "$dst", "src1": "$src1", "src2": "$src2"}]}, "load": {"pattern": [{"op": "LW", "dst": "$dst", "src1": "$src1", "offset": 0}]}, "store": {"pattern": [{"op": "SW", "dst": "r0", "src1": "$src2", "src2": "$src1", "offset": 0}]}}}

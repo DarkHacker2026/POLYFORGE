@@ -1,0 +1,4 @@
+# Force an overwrite of the existing ADD rule
+r3 = add(r1, r2)
+# Learn a fixed countdown loop construct
+r1 = loop(r1)

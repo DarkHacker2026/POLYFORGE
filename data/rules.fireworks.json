@@ -1,0 +1,131 @@
+{
+  "target": "vortex",
+  "version": 1,
+  "rules": {
+    "add": {
+      "rule_id": "ADD_INT_v1",
+      "operation": "add",
+      "pattern": [
+        {
+          "op": "ADD",
+          "dst": "$dst",
+          "src1": "$src1",
+          "src2": "$src2"
+        }
+      ],
+      "constraints": [],
+      "estimated_cycles": 1,
+      "replaces": null,
+      "explanation": "Integer addition maps to a single ADD instruction."
+    },
+    "mul": {
+      "rule_id": "MUL_INT_v1",
+      "operation": "mul",
+      "pattern": [
+        {
+          "op": "MUL",
+          "dst": "$dst",
+          "src1": "$src1",
+          "src2": "$src2"
+        }
+      ],
+      "constraints": [],
+      "estimated_cycles": 3,
+      "replaces": null,
+      "explanation": "Integer multiplication maps to a single MUL instruction."
+    },
+    "load": {
+      "rule_id": "LOAD_INT_v1",
+      "operation": "load",
+      "pattern": [
+        {
+          "op": "LW",
+          "dst": "$dst",
+          "base": "$base",
+          "offset": "$offset"
+        }
+      ],
+      "constraints": [],
+      "estimated_cycles": 1,
+      "replaces": null,
+      "explanation": "Load from memory maps to LW instruction."
+    }
+  },
+  "history": [
+    {
+      "ts": 1783417480,
+      "decision": "added",
+      "operation": "add",
+      "rule_id": "ADD_INT_v1",
+      "proof": {
+        "ok": true,
+        "expected": 11,
+        "actual": 11,
+        "cycles": 1,
+        "trace": [
+          {
+            "cycle": 1,
+            "inst": {
+              "op": "ADD",
+              "dst": "r3",
+              "src1": "r1",
+              "src2": "r2"
+            },
+            "dst_value": 11
+          }
+        ],
+        "simulator": "local_semantic_v0"
+      }
+    },
+    {
+      "ts": 1783417517,
+      "decision": "added",
+      "operation": "mul",
+      "rule_id": "MUL_INT_v1",
+      "proof": {
+        "ok": true,
+        "expected": 160,
+        "actual": 160,
+        "cycles": 3,
+        "trace": [
+          {
+            "cycle": 3,
+            "inst": {
+              "op": "MUL",
+              "dst": "r4",
+              "src1": "r3",
+              "src2": "r5"
+            },
+            "dst_value": 160
+          }
+        ],
+        "simulator": "local_semantic_v0"
+      }
+    },
+    {
+      "ts": 1783417565,
+      "decision": "added",
+      "operation": "load",
+      "rule_id": "LOAD_INT_v1",
+      "proof": {
+        "ok": true,
+        "expected": 33,
+        "actual": 33,
+        "cycles": 4,
+        "trace": [
+          {
+            "cycle": 4,
+            "inst": {
+              "op": "LW",
+              "dst": "r6",
+              "base": "r4",
+              "offset": 0
+            },
+            "dst_value": 33
+          }
+        ],
+        "simulator": "local_semantic_v0"
+      }
+    }
+  ]
+}

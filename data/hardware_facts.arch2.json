@@ -1,0 +1,50 @@
+{
+    "registers": [
+        "r0",
+        "r1",
+        "r2",
+        "r3",
+        "r4",
+        "r5",
+        "r6",
+        "r7",
+        "r8",
+        "r9",
+        "r10",
+        "r11",
+        "r12",
+        "r13",
+        "r14",
+        "r15"
+    ],
+    "zero_register": "r0",
+    "spill_base_register": "r0",
+    "isa": {
+        "ADD": {
+            "latency": 69
+        },
+        "SUB": {
+            "latency": 103
+        },
+        "LW": {
+            "latency": 144
+        },
+        "SW": {
+            "latency": 96
+        },
+        "ADDI": {
+            "latency": 69
+        },
+        "SLLI": {
+            "latency": 69
+        },
+        "BNE": {
+            "latency": 79
+        },
+        "BEQ": {
+            "latency": 79
+        }
+    },
+    "simt_facts": {},
+    "provenance": []
+}

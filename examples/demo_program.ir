@@ -1,0 +1,3 @@
+# First demo target: learn ADD end-to-end.
+r3 = add(r1, r2)
+

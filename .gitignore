@@ -1,0 +1,17 @@
+.env
+*.log
+__pycache__/
+*.pyc
+.pytest_cache/
+data/rules.local.json
+data/candidate_log.jsonl
+data/*.pt
+artifacts/
+!artifacts/.gitkeep
+scratch/cuda-samples/
+test_ramulator/
+test_ramulator2/
+vendor/vortex/build/
+vendor/vortex/trace/
+Barrier-in-kernel
+.aider*

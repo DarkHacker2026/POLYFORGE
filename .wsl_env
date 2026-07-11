@@ -1,0 +1,6 @@
+export TOOLDIR="/home/dark_hacker/tools"
+export VORTEX_HOME="/mnt/c/Users/Dark Hacker/Desktop/hackathon project/vendor/vortex"
+export VORTEX_BUILD_DIR="/mnt/c/Users/Dark Hacker/Desktop/hackathon project/vendor/vortex/build"
+export VORTEX_PATH="/mnt/c/Users/Dark Hacker/Desktop/hackathon project/vendor/vortex/build/install"
+export PKG_CONFIG_PATH="$VORTEX_PATH/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+export PATH="/home/dark_hacker/tools/llvm-vortex/bin:/home/dark_hacker/tools/riscv32-gnu-toolchain/bin:/home/dark_hacker/tools/verilator/bin:$PATH"

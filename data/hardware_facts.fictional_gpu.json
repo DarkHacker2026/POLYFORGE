@@ -1,0 +1,9 @@
+{
+    "num_threads_per_warp": 8,
+    "thread_id_supported": true,
+    "num_warps_per_core": 2,
+    "num_cores": 4,
+    "thread_id_csr_value_on_main_thread": 0,
+    "barrier_supported": false,
+    "total_threads_per_core": 16
+}

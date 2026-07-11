@@ -1,0 +1,7 @@
+# Boundary-aware mini IR, shaped like a lifted basic-block stream.
+entry:
+r3 = add(r1, r2)
+br_if_ne(r3, r0, exit)
+r4 = mul(r3, r5)
+exit:
+r6 = load(r4)

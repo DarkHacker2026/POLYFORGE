@@ -1,0 +1,30 @@
+{
+  "num_threads": 4,
+  "shared_memory_bytes": 4096,
+  "initial_memory": {
+    "0": 1, "4": 2, "8": 3, "12": 4,
+    "64": 0, "68": 0, "72": 0, "76": 0
+  },
+  "threads": [
+    {"tid": 0, "instructions": [
+      {"op": "WRITE",   "addr": 64, "value": 1,  "width": 4},
+      {"op": "BARRIER"},
+      {"op": "READ",    "addr": 68, "width": 4}
+    ]},
+    {"tid": 1, "instructions": [
+      {"op": "WRITE",   "addr": 68, "value": 2,  "width": 4},
+      {"op": "BARRIER"},
+      {"op": "READ",    "addr": 64, "width": 4}
+    ]},
+    {"tid": 2, "instructions": [
+      {"op": "WRITE",   "addr": 72, "value": 3,  "width": 4},
+      {"op": "BARRIER"},
+      {"op": "READ",    "addr": 64, "width": 4}
+    ]},
+    {"tid": 3, "instructions": [
+      {"op": "WRITE",   "addr": 76, "value": 4,  "width": 4},
+      {"op": "BARRIER"},
+      {"op": "READ",    "addr": 64, "width": 4}
+    ]}
+  ]
+}

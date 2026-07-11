@@ -1,0 +1,14 @@
+{
+  "num_threads": 2,
+  "shared_memory_bytes": 256,
+  "initial_memory": {"0": 99},
+  "threads": [
+    {"tid": 0, "instructions": [
+      {"op": "READ",  "addr": 0, "width": 4},
+      {"op": "WRITE", "addr": 0, "value": 100, "width": 4}
+    ]},
+    {"tid": 1, "instructions": [
+      {"op": "WRITE", "addr": 0, "value": 200, "width": 4}
+    ]}
+  ]
+}

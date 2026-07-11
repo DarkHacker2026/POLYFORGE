@@ -1,0 +1,11 @@
+# This file imitates output from different lifters/disassemblers.
+# It is not "ARM-only"; it is frontend-neutral normalized text.
+entry:
+  r3   =   r1   +   r2        # infix form
+  r4 = r3 * r5                // pasted operator spacing should not matter
+  add r7, r3, r4              # assembly-like three operand form
+  ldr r8, [r6]                # ARM-ish load form, normalized as load
+  bne r8, r0, exit            # control-flow boundary
+  r9 = unknown.vendor.op(r8, r7)
+exit:
+  ret

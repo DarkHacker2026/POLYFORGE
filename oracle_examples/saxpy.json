@@ -1,0 +1,23 @@
+{
+  "num_threads": 4,
+  "shared_memory_bytes": 4096,
+  "initial_memory": {
+    "0":  1, "4":  2,  "8":  3, "12":  4,
+    "64": 10, "68": 10, "72": 10, "76": 10,
+    "128": 0, "132": 0, "136": 0, "140": 0
+  },
+  "threads": [
+    {"tid": 0, "instructions": [
+      {"op": "WRITE", "addr": 128, "value": 11, "width": 4}
+    ]},
+    {"tid": 1, "instructions": [
+      {"op": "WRITE", "addr": 132, "value": 22, "width": 4}
+    ]},
+    {"tid": 2, "instructions": [
+      {"op": "WRITE", "addr": 136, "value": 33, "width": 4}
+    ]},
+    {"tid": 3, "instructions": [
+      {"op": "WRITE", "addr": 140, "value": 44, "width": 4}
+    ]}
+  ]
+}
