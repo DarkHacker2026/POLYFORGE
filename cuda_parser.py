@@ -974,6 +974,7 @@ def kernel_to_vortex_cpp(
             array_decls.append(f'volatile {ctype} {ap.name}[{N}] = {{{vals}}};')
         else:
             array_decls.append(f'volatile {ctype} {ap.name}[{N}];')
+    arrays_block = '\n'.join(array_decls)
 
     # ── Scalar parameter declarations ─────────────────────────────────────
     scalar_decls = []
