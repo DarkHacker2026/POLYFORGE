@@ -23,6 +23,7 @@ import re
 import argparse
 import pathlib
 import subprocess
+import math
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(_ROOT))
@@ -63,7 +64,8 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
         from grow_compiler import FireworksProvider, load_dotenv
         from cuda_parser import (
             CUDAKernel, CUDAParam,
-            kernel_to_vortex_cpp, kernel_to_oracle_ir, describe_parse
+            kernel_to_vortex_cpp, kernel_to_oracle_ir, describe_parse,
+            evaluate_clang_ast
         )
         from cuda_surface import lower_to_makefile
         from reference_isa import verify_parallel_kernel
@@ -246,22 +248,77 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     # Run oracle
     instructions, init_mem, init_regs, op_detected = kernel_to_oracle_ir(ck, N, init_values)
 
-    env_oracle: dict = {
-        'math': math, 'N': N, 'blockDim.x': N, 'blockIdx.x': 0, 'threadIdx.x': 0
-    }
-    for sp in ck.scalar_params:
-        if sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
-            env_oracle[sp.name] = N
-        else:
-            env_oracle[sp.name] = 0
-    env_oracle.update({k: v for k, v in ktp.items()
-                       if k not in ("extern_smem_expr", "expected_val")})
+    def check_result(results, memory):
+        if not ck.array_params:
+            return True, "No arrays to check"
+        dst = ck.array_params[-1]
+        src_arrays = ck.array_params[:-1]
+        errors = []
+        for i in range(N):
+            dst_base = init_regs.get(f'r{len(ck.array_params)}', 0)
+            addr = dst_base + i * 4
+            got = int.from_bytes(memory[addr:addr+4], byteorder='little', signed=True)
+            
+            env = {'i': i, 'math': math}
+            idx_var = ir["thread_indexing"]["index_variable"]
+            env[idx_var] = i
+            for sap in src_arrays:
+                env[sap.name] = init_values.get(sap.name, [0]*N)
+            for sp in ck.scalar_params:
+                if sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
+                    env[sp.name] = N
+                else:
+                    env[sp.name] = 0
+            if ck.name in test_params:
+                env.update(test_params[ck.name])
+            env['threadIdx'] = type('dim3', (), {'x': i, 'y': 0, 'z': 0})()
+            env['blockIdx']  = type('dim3', (), {'x': 0, 'y': 0, 'z': 0})()
+            env['blockDim']  = type('dim3', (), {'x': N, 'y': 1,  'z': 1})()
+            env['gridDim']   = type('dim3', (), {'x': 1, 'y': 1,  'z': 1})()
+
+            for var in ir.get("local_variables", []):
+                if var['name'] in env:
+                    continue
+                if var['expression'] in CUDA_UNEVALUABLE_EXPRS:
+                    continue
+                try:
+                    env[var['name']] = evaluate_clang_ast(var['expression'], env)
+                except Exception as e:
+                    return False, (
+                        f"Oracle REJECTED: Cannot evaluate local_variable '{var['name']}' "
+                        f"from expression '{var['expression']}': {e}. "
+                        f"This identifier is unmappable in the current Oracle environment. "
+                        f"Add it to test_params or fix the LLM extraction."
+                    )
+
+            match = re.search(rf'\b{dst.name}\s*\[.*?\]\s*=\s*(.+?);', kernels_code[0], re.DOTALL)
+            if not match:
+                match = re.search(dst.name + r'\[.*?\]\s*=\s*(.+?);', kernels_code[0], re.DOTALL)
+            if match:
+                raw_rhs = match.group(1).strip()
+            else:
+                raw_rhs = "0"
+            
+            try:
+                if ck.name in test_params and "expected_val" in test_params[ck.name]:
+                    expected = test_params[ck.name]["expected_val"]
+                else:
+                    expected = int(evaluate_clang_ast(raw_rhs, env))
+            except Exception as e:
+                return False, f"Failed to eval source truth '{raw_rhs}': {e}"
+                
+            if got != expected:
+                errors.append(f"[{dst.name}][{i}]: got={got}, expected={expected}")
+        if errors:
+            return False, "; ".join(errors[:3])
+        return True, f"All {N} results correct"
 
     oracle_result = verify_parallel_kernel(
         instructions=instructions,
         num_threads=N,
         initial_regs_per_thread=[dict(init_regs)] * N,
-        initial_mem=init_mem
+        initial_mem=init_mem,
+        check_fn=check_result
     )
     oracle_passed = oracle_result.get("ok", False)
     oracle_msg = oracle_result.get("message", "")
