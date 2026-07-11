@@ -1002,7 +1002,7 @@ def kernel_to_vortex_cpp(
     simx_result  = '0'
     simx_expected = '0'
 
-    if dst_param and src_params and init_values:
+    if dst_param and src_params and init_values and not (ck.has_shared or ck.has_syncthreads or ck.is_2d or ck.is_3d):
         # Extract ground-truth RHS from raw source
         match = re.search(r'\b' + dst_param.name + r'\[.*?\]\s*=\s*(.+?);', ck.raw_body, re.DOTALL)
         if not match:
