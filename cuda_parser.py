@@ -66,6 +66,38 @@ def build_body_stmts_from_ir(ir: dict, n_param: str) -> str:
         seen_vars.add(var['name'])
         body_stmts += f"auto {var['name']} = {var['expression']}; (void){var['name']};\n"
 
+    # Auto-declare identifiers the LLM omitted (e.g. loop variables) so the
+    # generated C++ still compiles.  We default to 0 — the kernel may be
+    # semantically wrong, but the hardware result remains authoritative.
+    known_names = set(seen_vars)
+    known_names.update({idx_var, 'tid', n_param,
+                        'blockIdx', 'threadIdx', 'blockDim', 'gridDim'})
+    for p in ir.get("parameters", []):
+        known_names.add(p["name"])
+    c_keywords = {
+        'int', 'float', 'double', 'char', 'void', 'auto', 'const', 'sizeof',
+        'return', 'if', 'else', 'for', 'while', 'do', 'break', 'continue',
+        'true', 'false', 'nullptr', 'NULL',
+    }
+    missing: set = set()
+    for op in ir.get("operations", []):
+        for field in ("target", "expression"):
+            text = op.get(field, "")
+            for m in re.finditer(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\b', text):
+                word = m.group(1)
+                if word in known_names or word in c_keywords:
+                    continue
+                rest = text[m.end():].lstrip()
+                if rest.startswith('('):
+                    continue
+                if m.start() > 0 and text[m.start() - 1] == '.':
+                    continue
+                missing.add(word)
+    for word in sorted(missing):
+        body_stmts += f"int {word} = 0; (void){word};\n"
+        seen_vars.add(word)
+        known_names.add(word)
+
     for op in ir.get("operations", []):
         expr = op['expression']
         target = op['target']
