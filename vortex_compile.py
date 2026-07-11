@@ -187,8 +187,12 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     for op in ir.get("operations", []):
         expr = op['expression']
         target = op['target']
+        if "__half{" in expr:
+            expr = expr.replace("__half{", "(__half)(")
+            if expr.endswith("}"):
+                expr = expr[:-1] + ")"
         expr = re.sub(r'\b(float|int|uint32_t|int32_t)\((.*?)\)', r'(\1)(\2)', expr)
-        body_stmts += f"{target} = {expr};\nvx_fence();\nvx_printf(\"T%d wrote %d\\n\", {idx_var}, (int){target});\n"
+        body_stmts += f"{target} = {expr};\nvx_fence();\n"
 
     ck = CUDAKernel(
         name=ir["kernel_name"],
