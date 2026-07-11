@@ -15,3 +15,6 @@ vendor/vortex/build/
 vendor/vortex/trace/
 Barrier-in-kernel
 .aider*
+aider_env/
+node_modules/
+vortex/
