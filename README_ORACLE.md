@@ -1,4 +1,4 @@
-# parallel-oracle
+# POLYFORGE Oracle
 
 > A race-detecting oracle that verifies parallel kernel correctness — before you touch hardware.
 
@@ -6,7 +6,7 @@
 
 ## What It Is
 
-**parallel-oracle** is a standalone, hardware-agnostic tool that catches data races in parallel kernels at the IR level, before any silicon is involved. It detects all three classes of hazard:
+**POLYFORGE** includes a standalone, hardware-agnostic oracle that catches data races in parallel kernels at the IR level, before any silicon is involved. It detects all three classes of hazard:
 
 - **RAW** (Read-After-Write) — a thread reads a location before a writing thread's result is made visible via a barrier.
 - **WAW** (Write-After-Write) — two threads write the same location in the same sync epoch with no ordering guarantee.
@@ -64,7 +64,7 @@ Kernels are described as a JSON object. Example: 2 threads, thread 0 writes then
 ## Installation & CLI Usage
 
 ```bash
-pip install parallel-oracle
+pip install polyforge
 ```
 
 Run a kernel JSON through the oracle:
@@ -72,7 +72,7 @@ Run a kernel JSON through the oracle:
 ```bash
 python oracle_standalone.py my_kernel.json
 # or, after pip install:
-parallel-oracle my_kernel.json
+polyforge my_kernel.json
 ```
 
 ---

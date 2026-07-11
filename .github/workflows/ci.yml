@@ -1,0 +1,12 @@
+name: POLYFORGE CI
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r requirements.txt
+      - run: python -m pytest test_oracle_hardened.py test_oracle_races.py test_parallel_oracle.py -v
+      - run: python demo_offline.py

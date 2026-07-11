@@ -80,7 +80,18 @@ Raw CUDA kernel to parse:
 ```
 """
 
+def check_wsl():
+    import subprocess, sys
+    r = subprocess.run(["wsl.exe", "--status"], capture_output=True)
+    if r.returncode != 0:
+        print("ERROR: WSL2 is not available or not configured.")
+        print("POLYFORGE hardware execution requires WSL2 + Vortex SIMX.")
+        print("See QUICKSTART.md for setup instructions.")
+        sys.exit(1)
+
+
 def main():
+    check_wsl()
     load_dotenv(ROOT / ".env")
     provider = FireworksProvider()
     if len(sys.argv) > 1:

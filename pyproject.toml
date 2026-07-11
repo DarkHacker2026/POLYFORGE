@@ -3,10 +3,10 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.backends.legacy:build"
 
 [project]
-name = "parallel-oracle"
+name = "polyforge"
 version = "0.1.0"
-description = "Race-detecting oracle for custom parallel hardware compilers. Discovers data races (RAW, WAW, WAR) in parallel kernels using empirically-discovered hardware facts."
-readme = "README_ORACLE.md"
+description = "POLYFORGE — Universal parallel kernel compiler. Any CUDA kernel, any hardware, verified."
+readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 keywords = ["parallel", "oracle", "race-detection", "RISC-V", "GPU", "compiler"]
@@ -18,7 +18,7 @@ classifiers = [
 ]
 
 [project.scripts]
-parallel-oracle = "oracle_standalone:main"
+polyforge = "oracle_standalone:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

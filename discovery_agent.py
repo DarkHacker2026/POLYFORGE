@@ -313,7 +313,17 @@ clean-stage:
 
     # ------ main entry point ---------------------------------------------------------------------------------------------------------------------------------------------------------------
 
+    def check_wsl(self):
+        import subprocess, sys
+        r = subprocess.run(["wsl.exe", "--status"], capture_output=True)
+        if r.returncode != 0:
+            print("ERROR: WSL2 is not available or not configured.")
+            print("POLYFORGE hardware execution requires WSL2 + Vortex SIMX.")
+            print("See QUICKSTART.md for setup instructions.")
+            sys.exit(1)
+
     def run(self, output_file: Path, probe_simt: bool = False):
+        self.check_wsl()
         self.discover_registers()
         self.discover_isa_and_latencies()
         if probe_simt:

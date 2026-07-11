@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SRC="${1:-/mnt/c/Users/Dark Hacker/Desktop/hackathon project}"
-DEST="${2:-$HOME/hackathon-project}"
+SRC="${1:-/mnt/c/Users/Dark Hacker/Desktop/POLYFORGE}"
+DEST="${2:-$HOME/POLYFORGE}"
 
 mkdir -p "$DEST"
 rsync -a --delete \

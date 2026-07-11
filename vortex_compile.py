@@ -35,11 +35,22 @@ def _inject_stage_labels():
     pass
 
 
+def check_wsl():
+    import subprocess, sys
+    r = subprocess.run(["wsl.exe", "--status"], capture_output=True)
+    if r.returncode != 0:
+        print("ERROR: WSL2 is not available or not configured.")
+        print("POLYFORGE hardware execution requires WSL2 + Vortex SIMX.")
+        print("See QUICKSTART.md for setup instructions.")
+        sys.exit(1)
+
+
 def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     """
     Run the full pipeline on a .cu file by delegating to test_llm_comprehension.py.
     Returns exit code: 0 for SIMX_RESULT=0, 1 otherwise.
     """
+    check_wsl()
     total_stages = 5
     cu_path = pathlib.Path(cuda_file)
 
