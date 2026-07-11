@@ -15,14 +15,18 @@ def run_test(name, instructions, should_fail):
         oracle.execute_parallel(instructions, initial_regs=None, initial_mem={0: 10, 4: 20})
         if should_fail:
             print("FAIL: Expected a data race exception, but it passed!")
+            return False
         else:
             print("PASS: Execution completed successfully as expected.")
+            return True
     except Exception as e:
         if should_fail and "Data Race" in str(e):
             print(f"PASS: Caught expected data race -> {e}")
+            return True
         else:
             print(f"FAIL: Unexpected error -> {e}")
             traceback.print_exc()
+            return False
 
 def main():
     # 1. RAW Race (Missing Barrier)
@@ -62,9 +66,20 @@ def main():
         {"op": "SW", "src2": "r10", "base": "r11", "offset": 0},
     ]
 
-    run_test("RAW Data Race (Missing Barrier)", raw_race_insts, should_fail=True)
-    run_test("RAW Safe (With Barrier)", raw_safe_insts, should_fail=False)
-    run_test("WAW Data Race (Missing Barrier)", waw_race_insts, should_fail=True)
+    results = [
+        run_test("RAW Data Race (Missing Barrier)", raw_race_insts, should_fail=True),
+        run_test("RAW Safe (With Barrier)", raw_safe_insts, should_fail=False),
+        run_test("WAW Data Race (Missing Barrier)", waw_race_insts, should_fail=True),
+    ]
+    passed = sum(results)
+    total = len(results)
+    print(f"\nResult: {passed}/{total} tests passed")
+    return 0 if passed == total else 1
+
+
+def test_race_suite():
+    assert main() == 0
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

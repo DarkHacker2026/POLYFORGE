@@ -184,5 +184,10 @@ def main():
     print(f"{'='*45}\n")
     return 0 if passed == total else 1
 
+
+def test_hardened_suite():
+    assert main() == 0
+
+
 if __name__ == "__main__":
     sys.exit(main())

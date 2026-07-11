@@ -160,6 +160,12 @@ def run_barrier_test():
     return ok
 
 
+def test_parallel_oracle():
+    ok1 = run_oracle_test()
+    ok2 = run_barrier_test()
+    assert ok1 and ok2
+
+
 if __name__ == "__main__":
     ok1 = run_oracle_test()
     ok2 = run_barrier_test()
