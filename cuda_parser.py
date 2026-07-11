@@ -898,6 +898,8 @@ def kernel_to_vortex_cpp(
     Lower a parsed CUDAKernel to a complete, compilable Vortex C++ file.
     """
     init_values = init_values or {}
+    print(f"         [DEBUG] kernel_to_vortex_cpp: arrays={[p.name for p in ck.array_params]}, scalars={[p.name for p in ck.scalar_params]}")
+    print(f"         [DEBUG] init_values keys: {list(init_values.keys())}")
     barrier_supported = simt_facts.get('barrier_supported', False)
     barrier_primitive = simt_facts.get('barrier_primitive', '__syncthreads()')
     num_warps = simt_facts.get('num_warps_per_core', 4)

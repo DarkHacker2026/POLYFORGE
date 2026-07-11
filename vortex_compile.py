@@ -162,7 +162,7 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     }
     import math
 
-    # ── Fallback: extract params from raw source in case LLM dropped any ──
+    # ── Ground-truth params from raw source (LLM often misclassifies pointers) ──
     def _extract_params_from_source(raw: str) -> list[dict]:
         m = re.search(r'__global__\s+\w+\s+\w+\s*\(([^)]*)\)', raw, re.DOTALL)
         if not m:
@@ -182,13 +182,26 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
             out.append({"name": n, "base_type": base, "is_pointer": is_ptr, "is_const": 'const' in part})
         return out
 
-    llm_names = {p["name"] for p in ir.get("parameters", [])}
-    for fp in _extract_params_from_source(kernels_code[0]):
-        if fp["name"] not in llm_names:
-            ir.setdefault("parameters", []).append(fp)
+    # Use regex-extracted params as ground truth; LLM params are advisory only
+    raw_params = _extract_params_from_source(kernels_code[0])
+    if not raw_params:
+        print(f"[FAIL] Could not extract parameters from kernel source")
+        return 1
+
+    # Merge LLM metadata (like is_const) if available, but keep regex classification
+    llm_params = {p["name"]: p for p in ir.get("parameters", [])}
+    merged_params = []
+    for rp in raw_params:
+        lp = llm_params.get(rp["name"], {})
+        merged_params.append({
+            "name": rp["name"],
+            "base_type": lp.get("base_type", rp["base_type"]),
+            "is_pointer": rp["is_pointer"],  # TRUST REGEX, not LLM
+            "is_const": lp.get("is_const", rp["is_const"]),
+        })
 
     params = []
-    for p in ir["parameters"]:
+    for p in merged_params:
         params.append(CUDAParam(
             ctype=p["base_type"] + ("*" if p["is_pointer"] else ""),
             name=p["name"],
@@ -197,6 +210,10 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
         ))
     array_params = [p for p in params if p.is_pointer]
     scalar_params = [p for p in params if p.is_scalar]
+
+    print(f"         [DEBUG] Detected params: " + ", ".join(
+        f"{p.name}({'ptr' if p.is_pointer else 'scalar'})" for p in params
+    ))
 
     n_param = 'N'
     for p in scalar_params:
@@ -378,6 +395,10 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
             macros += f"#define {k} {v}\n"
     else:
         macros = ""
+
+    print(f"         [DEBUG] init_values keys: {list(init_values.keys())}")
+    print(f"         [DEBUG] array_params: {[p.name for p in ck.array_params]}")
+    print(f"         [DEBUG] scalar_params: {[p.name for p in ck.scalar_params]}")
 
     try:
         cpp_code = kernel_to_vortex_cpp(ck, simt_facts, N, init_values, op_detected)
