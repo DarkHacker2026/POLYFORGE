@@ -31,6 +31,8 @@ import io
 
 _ROOT = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(_ROOT))
+sys.path.insert(0, str(_ROOT / "src"))
+sys.path.insert(0, str(_ROOT / "tests"))
 
 
 # ---------------------------------------------------------------------------

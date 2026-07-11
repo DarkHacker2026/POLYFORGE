@@ -9,13 +9,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT.parent / "src"))
 
 from grow_compiler import is_structural_ir_op, parse_ir
 
 
 def run_cmd(args: list[str]) -> str:
     proc = subprocess.run(
-        [sys.executable, str(ROOT / "grow_compiler.py"), *args],
+        [sys.executable, str(ROOT / "src" / "grow_compiler.py"), *args],
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,

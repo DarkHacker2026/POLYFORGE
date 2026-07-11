@@ -20,10 +20,13 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+import sys as _sys
+from pathlib import Path as _Path
+_sys.path.insert(0, str(_Path(__file__).resolve().parent))
 from reference_isa import ReferenceISA, get_initial_state, compute_expected
 
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_FACTS = ROOT / "data" / "hardware_facts.vortex.json"
 DEFAULT_RULES = ROOT / "data" / "rules.json"
 
