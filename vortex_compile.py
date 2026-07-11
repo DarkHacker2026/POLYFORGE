@@ -257,8 +257,8 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
             env = {'i': i, 'math': math}
             idx_var = ir["thread_indexing"]["index_variable"]
             env[idx_var] = i
-            for sap in src_arrays:
-                env[sap.name] = init_values.get(sap.name, [0]*N)
+            for ap in ck.array_params:
+                env[ap.name] = init_values.get(ap.name, [0]*N)
             for sp in ck.scalar_params:
                 if sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
                     env[sp.name] = N
