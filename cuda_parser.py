@@ -1018,10 +1018,15 @@ def kernel_to_vortex_cpp(
         is_float_type = ('float' in dst_param.ctype or 'double' in dst_param.ctype)
         for i in range(N):
             env = {'i': i, 'math': math}
-            for sp in src_params:
-                env[sp.name] = init_values.get(sp.name, [0]*N)
+            for ap in ck.array_params:
+                env[ap.name] = init_values.get(ap.name, [0]*N)
             for sp in ck.scalar_params:
-                env[sp.name] = N
+                if sp.name in init_values:
+                    env[sp.name] = init_values[sp.name]
+                elif sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
+                    env[sp.name] = N
+                else:
+                    env[sp.name] = 0
 
             if ck.name == "initializeInputs":
                 env['tid'] = env['i']
