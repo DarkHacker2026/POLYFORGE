@@ -162,6 +162,31 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     }
     import math
 
+    # ── Fallback: extract params from raw source in case LLM dropped any ──
+    def _extract_params_from_source(raw: str) -> list[dict]:
+        m = re.search(r'__global__\s+\w+\s+\w+\s*\(([^)]*)\)', raw, re.DOTALL)
+        if not m:
+            return []
+        out = []
+        for part in m.group(1).split(','):
+            part = part.strip()
+            if not part:
+                continue
+            p_clean = re.sub(r'\b(const|__restrict__)\b', '', part).strip()
+            m2 = re.match(r'(.+?)\s+(\w+)\s*$', p_clean)
+            if not m2:
+                continue
+            t, n = m2.group(1).strip(), m2.group(2).strip()
+            is_ptr = '*' in part
+            base = t.replace('*', '').replace('const', '').strip()
+            out.append({"name": n, "base_type": base, "is_pointer": is_ptr, "is_const": 'const' in part})
+        return out
+
+    llm_names = {p["name"] for p in ir.get("parameters", [])}
+    for fp in _extract_params_from_source(kernels_code[0]):
+        if fp["name"] not in llm_names:
+            ir.setdefault("parameters", []).append(fp)
+
     params = []
     for p in ir["parameters"]:
         params.append(CUDAParam(
