@@ -173,10 +173,10 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
             if not part:
                 continue
             p_clean = re.sub(r'\b(const|__restrict__)\b', '', part).strip()
-            m2 = re.match(r'(.+?)\s+(\w+)\s*$', p_clean)
+            m2 = re.match(r'(.+?)\s+(\*?\w+)\s*$', p_clean)
             if not m2:
                 continue
-            t, n = m2.group(1).strip(), m2.group(2).strip()
+            t, n = m2.group(1).strip(), m2.group(2).strip().lstrip('*')
             is_ptr = '*' in part
             base = t.replace('*', '').replace('const', '').strip()
             out.append({"name": n, "base_type": base, "is_pointer": is_ptr, "is_const": 'const' in part})
