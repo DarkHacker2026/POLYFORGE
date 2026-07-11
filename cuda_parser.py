@@ -34,12 +34,16 @@ import math
 
 def _configure_libclang() -> None:
     candidates = []
+    # 1. Environment variables
     env_file = os.environ.get("LIBCLANG_PATH")
     if env_file:
         candidates.append(env_file)
     env_dir = os.environ.get("LIBCLANG_DIR")
     if env_dir:
         candidates.append(os.path.join(env_dir, "libclang.so"))
+        candidates.append(os.path.join(env_dir, "libclang.dll"))
+
+    # 2. Linux paths
     candidates.extend([
         "/usr/lib/llvm-21/lib/libclang.so",
         "/usr/lib/llvm-20/lib/libclang.so",
@@ -50,10 +54,24 @@ def _configure_libclang() -> None:
         "/usr/lib/x86_64-linux-gnu/libclang-19.so",
         "/usr/lib/x86_64-linux-gnu/libclang-18.so",
     ])
+
+    # 3. Windows paths
+    candidates.extend([
+        r"C:\Program Files\LLVM\bin\libclang.dll",
+        r"C:\Program Files (x86)\LLVM\bin\libclang.dll",
+        r"C:\LLVM\bin\libclang.dll",
+    ])
+
     for candidate in candidates:
         if candidate and os.path.exists(candidate):
             clang.cindex.Config.set_library_file(candidate)
             return
+
+    raise ImportError(
+        "Cannot find libclang shared library. "
+        "Set LIBCLANG_PATH to the full path of libclang.so / libclang.dll, "
+        "or install LLVM and ensure it is on the system path."
+    )
 
 
 _configure_libclang()
