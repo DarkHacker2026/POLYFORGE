@@ -27,7 +27,6 @@ from typing import Any
 class ParseError(Exception):
     pass
 
-import pycparser
 import clang.cindex
 from clang.cindex import Index, CursorKind
 import math
@@ -246,112 +245,6 @@ def evaluate_clang_ast(expr_str: str, env: dict):
     raise ValueError("Could not find AST node for expression")
 
 
-
-from pycparser import c_ast
-
-class CppExprEvaluator:
-    def __init__(self, env):
-        self.env = env
-        
-    def evaluate(self, node):
-        if isinstance(node, c_ast.BinaryOp):
-            left = self.evaluate(node.left)
-            right = self.evaluate(node.right)
-            if node.op == '+': return left + right
-            elif node.op == '-': return left - right
-            elif node.op == '*': return left * right
-            elif node.op == '/': return left / right
-            elif node.op == '<': return left < right
-            elif node.op == '>': return left > right
-            elif node.op == '<=': return left <= right
-            elif node.op == '>=': return left >= right
-            elif node.op == '==': return left == right
-            elif node.op == '!=': return left != right
-            elif node.op == '%': return left % right
-            else:
-                raise ValueError(f"Unknown BinaryOp: {node.op}")
-        elif isinstance(node, c_ast.UnaryOp):
-            if node.op == '-':
-                return -self.evaluate(node.expr)
-            elif node.op == '+':
-                return +self.evaluate(node.expr)
-            elif node.op == '!':
-                return not self.evaluate(node.expr)
-            else:
-                raise ValueError(f"Unknown UnaryOp: {node.op}")
-        elif isinstance(node, c_ast.Constant):
-            val = node.value
-            if val.lower().endswith('f'):
-                val = val[:-1]
-            if '.' in val:
-                return float(val)
-            else:
-                return int(val)
-        elif isinstance(node, c_ast.ID):
-            return self.env[node.name]
-        elif isinstance(node, c_ast.ArrayRef):
-            array = self.evaluate(node.name)
-            idx = self.evaluate(node.subscript)
-            return array[idx]
-        elif isinstance(node, c_ast.TernaryOp):
-            cond = self.evaluate(node.cond)
-            if cond:
-                return self.evaluate(node.iftrue)
-            else:
-                return self.evaluate(node.iffalse)
-        elif isinstance(node, c_ast.Cast):
-            val = self.evaluate(node.expr)
-            typ = node.to_type.type.type.names[0]
-            if typ == 'float' or typ == 'double':
-                return float(val)
-            elif typ == 'int':
-                return int(val)
-            return val
-        elif isinstance(node, c_ast.FuncCall):
-            func_name = node.name.name
-            args = [self.evaluate(arg) for arg in node.args.exprs] if node.args else []
-            import math
-            math_map = {
-                'sinf': math.sin,
-                'cosf': math.cos,
-                'expf': math.exp,
-                'sqrtf': math.sqrt,
-                'fabsf': math.fabs,
-                'powf': math.pow,
-                'fminf': min,
-                'fmaxf': max,
-            }
-            if func_name in math_map:
-                return math_map[func_name](*args)
-            else:
-                raise ValueError(f"Unknown Math function: {func_name}")
-        else:
-            raise ValueError(f"Unknown AST node: {type(node)}")
-
-def evaluate_cpp_ast(expr_str: str, env: dict):
-    """
-    Parses a C++ expression using pycparser's AST and evaluates it deterministically.
-    """
-    # Hack to convert C++ uniform initialization (e.g. __half{...}) to C-style cast
-    import re
-    expr_str = re.sub(r'__half\s*\{\s*(.*?)\s*\}', r'(float)(\1)', expr_str)
-    # Hack to convert C++ functional cast (e.g. float(x)) to C-style cast
-    expr_str = re.sub(r'\bfloat\s*\((.*?)\)', r'((float)(\1))', expr_str)
-    
-    src = f"void f() {{ float _result = {expr_str}; }}"
-    parser = pycparser.CParser()
-    try:
-        ast = parser.parse(src)
-    except pycparser.c_parser.ParseError as e:
-        raise ValueError(f"ParseError: {e}")
-        
-    func_def = ast.ext[0]
-    compound = func_def.body
-    decl = compound.block_items[0]
-    init_expr = decl.init
-    
-    evaluator = CppExprEvaluator(env)
-    return evaluator.evaluate(init_expr)
 
 # ---------------------------------------------------------------------------
 # Data structures
@@ -1040,7 +933,7 @@ def kernel_to_vortex_cpp(
                 if ck.name == "reduce0" and dst_param.name == "g_odata":
                     raw_val = 3
                 else:
-                    raw_val = evaluate_cpp_ast(raw_rhs, env)
+                    raw_val = evaluate_clang_ast(raw_rhs, env)
                 if is_half_type:
                     # Convert float -> IEEE-754 fp16 bit pattern (uint16)
                     val = int(np.float16(float(raw_val)).view(np.uint16))
