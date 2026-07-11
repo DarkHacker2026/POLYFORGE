@@ -973,6 +973,25 @@ def kernel_to_vortex_cpp(
         else:
             array_decls.append(f'volatile {ctype} {ap.name}[{N}];')
 
+    # ── Scalar parameter declarations ─────────────────────────────────────
+    scalar_decls = []
+    for sp in ck.scalar_params:
+        if sp.name in init_values:
+            val = init_values[sp.name]
+            if isinstance(val, float):
+                val_str = f"{val}f"
+            else:
+                val_str = str(val)
+        elif sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
+            val_str = str(N)
+        else:
+            if 'float' in sp.ctype or 'double' in sp.ctype:
+                val_str = "0.0f"
+            else:
+                val_str = "0"
+        scalar_decls.append(f'{sp.ctype} {sp.name} = {val_str};')
+    scalar_block = '\n'.join(scalar_decls)
+
     # ── Index variable detection ───────────────────────────────────────────
     # If the body doesn't have an index variable definition, inject one.
     if 'blockIdx' not in body:
@@ -1138,6 +1157,9 @@ static volatile int warp1_ran = 0;
 // Array arguments -> global volatile arrays
 {arrays_block}
 uint32_t N = {N};
+
+// Scalar parameters -> global variables (kernel expects them in scope)
+{scalar_block}
 
 static void {ck.name}(void *__args) {{
   (void)__args;

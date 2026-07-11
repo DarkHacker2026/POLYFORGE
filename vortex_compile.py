@@ -215,6 +215,16 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
         else:
             init_values[ap.name] = [0] * N
 
+    # Scalar parameters need initial values too (for oracle + C++ codegen)
+    for sp in ck.scalar_params:
+        if sp.name not in init_values:
+            if 'float' in sp.ctype or 'double' in sp.ctype:
+                init_values[sp.name] = 3.0
+            elif sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
+                init_values[sp.name] = N
+            else:
+                init_values[sp.name] = 0
+
     # Shared memory verification
     ktp = test_params.get(ck.name, {})
     for sm in ir.get("shared_memory", []):
@@ -260,7 +270,9 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
             for ap in ck.array_params:
                 env[ap.name] = init_values.get(ap.name, [0]*N)
             for sp in ck.scalar_params:
-                if sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
+                if sp.name in init_values:
+                    env[sp.name] = init_values[sp.name]
+                elif sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
                     env[sp.name] = N
                 else:
                     env[sp.name] = 0
