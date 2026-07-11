@@ -440,12 +440,24 @@ class VortexSimulator:
                 f"cd ~/hackathon-project && source .wsl_env && "
                 f"timeout {self.timeout_inner} make -C artifacts/{worker_root_name}/{project_name} {make_target}"
             )
+            # TASK 2: Stream stdout/stderr in real-time for full transparency
+            print(f"  [sim] Running: {cmd}", flush=True)
             result = subprocess.run(
                 ["wsl.exe", "-e", "bash", "-c", cmd],
                 capture_output=True,
                 text=True,
                 timeout=self.timeout_outer
             )
+
+            # Print all output for transparency
+            if result.stdout:
+                print(f"  [sim] stdout:", flush=True)
+                for line in result.stdout.splitlines():
+                    print(f"    {line}", flush=True)
+            if result.stderr:
+                print(f"  [sim] stderr:", flush=True)
+                for line in result.stderr.strip().splitlines()[:20]:
+                    print(f"    {line}", flush=True)
 
             stdout = result.stdout
             if "Passed!" in stdout or "Failed!" in stdout:
@@ -802,12 +814,19 @@ class FireworksProvider(LLMProvider):
             "RULE_MODEL",
             "accounts/fireworks/models/kimi-k2p6"
         )
+        # Lite model for fast, cheap parsing tasks (IR extraction).
+        # Uses a much smaller model — we don't need massive reasoning
+        # resources just for extracting structural JSON from a kernel.
+        self.parser_model = os.environ.get(
+            "PARSER_MODEL",
+            "accounts/fireworks/models/gemma-2-9b-it"
+        )
         self.endpoint = os.environ.get(
             "FIREWORKS_CHAT_ENDPOINT",
             "https://api.fireworks.ai/inference/v1/chat/completions"
         )
 
-    def _chat_json(self, model: str, prompt: str) -> dict[str, Any]:
+    def _chat_json(self, model: str, prompt: str, temperature: float = 0.2) -> dict[str, Any]:
         messages = [
             {"role": "system", "content": "Return strict JSON only. No markdown."},
             {"role": "user", "content": prompt}
@@ -817,7 +836,7 @@ class FireworksProvider(LLMProvider):
             payload = {
                 "model": model,
                 "messages": messages,
-                "temperature": 0.2,
+                "temperature": temperature,
                 "max_tokens": 4096,
                 "response_format": {"type": "json_object"}
             }
@@ -876,6 +895,15 @@ class FireworksProvider(LLMProvider):
                 print(f"[llm] api error: {exc}, retrying ({attempt+1}/3)...")
                 time.sleep(2 ** attempt)
         raise CompilerError("Failed after retries")
+
+    def parse_kernel(self, prompt: str) -> dict[str, Any]:
+        """Use the lite parser model for cheap, fast IR extraction.
+        
+        Uses lower temperature (0.1) for more deterministic output.
+        Falls back gracefully — the caller (cuda_parser) has regex
+        fallbacks to handle imperfect JSON from the cheaper model.
+        """
+        return self._chat_json(self.parser_model, prompt, temperature=0.1)
 
     def generate_candidate(self, prompt: str, op: IROperation) -> dict[str, Any]:
         del op

@@ -44,6 +44,320 @@ CUDA_UNEVALUABLE_EXPRS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Robust IR normalization & regex fallbacks (Task 1: "unbounded" parser)
+# ---------------------------------------------------------------------------
+# These functions make the parser resilient to imperfect output from cheaper
+# "lite" LLM models.  They repair missing/malformed fields and can fall back
+# to pure regex extraction directly from the CUDA source when the LLM IR is
+# unusable.
+
+# Regex patterns for fallback extraction from raw CUDA source
+_FALLBACK_KERNEL_NAME_RE = re.compile(r'__global__\s+\w+\s+(\w+)\s*\(')
+_FALLBACK_PARAMS_RE = re.compile(r'__global__\s+\w+\s+\w+\s*\(([^)]*)\)', re.DOTALL)
+_FALLBACK_INDEX_RE = re.compile(
+    r'int\s+(\w+)\s*=\s*'
+    r'(?:blockIdx\.x\s*\*\s*blockDim\.x\s*\+\s*threadIdx\.x'
+    r'|threadIdx\.x\s*\+\s*blockIdx\.x\s*\*\s*blockDim\.x'
+    r'|threadIdx\.x)'
+)
+_FALLBACK_BOUNDS_RE = re.compile(r'if\s*\(\s*(\w+)\s*<\s*(\w+)\s*\)')
+_FALLBACK_ASSIGN_RE = re.compile(r'(\w+)\s*\[[^\]]*\]\s*=\s*([^;]+);')
+_FALLBACK_SHARED_RE = re.compile(
+    r'(?:static\s+)?__shared__\s+([\w\*]+)\s+(\w+)\s*\[(.*?)\]\s*;'
+)
+_FALLBACK_EXTERN_SHARED_RE = re.compile(
+    r'extern\s+__shared__\s+([\w\*]+)\s+(\w+)\s*\[\s*\]\s*;'
+)
+
+
+def _strip_comments(source: str) -> str:
+    """Strip C/C++ comments from source code for cleaner regex extraction."""
+    # Remove single-line comments
+    source = re.sub(r'//[^\n]*', '', source)
+    # Remove multi-line comments
+    source = re.sub(r'/\*.*?\*/', '', source, flags=re.DOTALL)
+    return source
+
+
+def _detect_indexing_type(source: str) -> str:
+    """Detect thread indexing topology from raw source."""
+    has_y = bool(re.search(r'blockIdx\.y|threadIdx\.y|blockDim\.y', source))
+    has_z = bool(re.search(r'blockIdx\.z|threadIdx\.z|blockDim\.z', source))
+    if has_z:
+        return "3D_global"
+    if has_y:
+        return "2D_global"
+    if _FALLBACK_INDEX_RE.search(source):
+        return "1D_global"
+    return "unknown"
+
+
+def _detect_op_type(expr: str) -> str:
+    """Detect the fundamental operation type from an expression string."""
+    expr_clean = re.sub(r'\w+\s*\[.*?\]', 'ARR', expr)
+    operators = [c for c in expr_clean if c in '+-*/']
+    arr_count = expr_clean.count('ARR')
+    if arr_count == 2 and len(operators) == 1:
+        return {'+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV'}.get(operators[0], 'OTHER')
+    if arr_count == 3 and len(operators) == 2 and '*' in expr_clean and '+' in expr_clean:
+        return 'SAXPY'
+    return 'OTHER'
+
+
+def _parse_param_str_fallback(param_str: str) -> list[dict]:
+    """Parse a CUDA parameter string into parameter dicts using regex."""
+    out = []
+    for part in param_str.split(','):
+        part = part.strip()
+        if not part:
+            continue
+        p_clean = re.sub(r'\b(const|__restrict__)\b', '', part).strip()
+        m = re.match(r'(.+?)\s+(\*?\w+)\s*$', p_clean)
+        if not m:
+            continue
+        t, n = m.group(1).strip(), m.group(2).strip().lstrip('*')
+        is_ptr = '*' in part
+        base = t.replace('*', '').replace('const', '').strip()
+        out.append({
+            "name": n,
+            "base_type": base,
+            "is_pointer": is_ptr,
+            "is_const": 'const' in part,
+        })
+    return out
+
+
+def normalize_and_repair_ir(ir: dict, raw_source: str) -> dict:
+    """Normalize and repair an LLM-extracted IR dict.
+
+    This makes the parser "unbounded" -- it gracefully handles:
+    - Missing keys (kernel_name, parameters, thread_indexing, etc.)
+    - Wrong types (e.g. string instead of bool)
+    - Extra text or markdown around the JSON
+    - Slightly malformed field values
+
+    When the LLM output is missing critical fields, this function falls back
+    to regex extraction directly from the raw CUDA source.
+
+    Returns a repaired IR dict with all expected keys present.
+    """
+    if not isinstance(ir, dict):
+        return _extract_ir_from_source(_strip_comments(raw_source))
+
+    repaired = dict(ir)  # shallow copy
+
+    # kernel_name
+    if not repaired.get("kernel_name") or not isinstance(repaired["kernel_name"], str):
+        m = _FALLBACK_KERNEL_NAME_RE.search(raw_source)
+        if m:
+            repaired["kernel_name"] = m.group(1)
+        else:
+            repaired["kernel_name"] = "unknown_kernel"
+
+    # parameters
+    params = repaired.get("parameters", [])
+    if not isinstance(params, list) or not params:
+        pm = _FALLBACK_PARAMS_RE.search(raw_source)
+        if pm:
+            params = _parse_param_str_fallback(pm.group(1))
+        else:
+            params = []
+    else:
+        repaired_params = []
+        for p in params:
+            if not isinstance(p, dict):
+                continue
+            rp = {}
+            rp["name"] = str(p.get("name", "")).strip()
+            rp["base_type"] = str(p.get("base_type", "float")).strip()
+            rp["is_pointer"] = bool(p.get("is_pointer", False))
+            rp["is_const"] = bool(p.get("is_const", False))
+            if not rp["name"]:
+                continue
+            repaired_params.append(rp)
+        params = repaired_params
+    repaired["parameters"] = params
+
+    # thread_indexing
+    ti = repaired.get("thread_indexing", {})
+    if not isinstance(ti, dict):
+        ti = {}
+    if not ti.get("type") or not isinstance(ti["type"], str):
+        ti["type"] = _detect_indexing_type(raw_source)
+    if not ti.get("index_variable") or not isinstance(ti["index_variable"], str):
+        m = _FALLBACK_INDEX_RE.search(raw_source)
+        ti["index_variable"] = m.group(1) if m else "i"
+    repaired["thread_indexing"] = ti
+
+    # bounds_check
+    bc = repaired.get("bounds_check", {})
+    if not isinstance(bc, dict):
+        bc = {}
+    if "has_bounds_check" not in bc:
+        bc["has_bounds_check"] = bool(_FALLBACK_BOUNDS_RE.search(raw_source))
+    if bc.get("condition") is None and bc["has_bounds_check"]:
+        m = _FALLBACK_BOUNDS_RE.search(raw_source)
+        bc["condition"] = m.group(0) if m else None
+    repaired["bounds_check"] = bc
+
+    # operations
+    ops = repaired.get("operations", [])
+    if not isinstance(ops, list):
+        ops = []
+    repaired_ops = []
+    for op in ops:
+        if not isinstance(op, dict):
+            continue
+        rop = {}
+        rop["target"] = str(op.get("target", "")).strip()
+        rop["expression"] = str(op.get("expression", "")).strip()
+        rop["op_type"] = str(op.get("op_type", "OTHER")).strip().upper()
+        if rop["op_type"] not in ("ADD", "SUB", "MUL", "DIV", "SAXPY", "OTHER"):
+            rop["op_type"] = "OTHER"
+        if not rop["target"] or not rop["expression"]:
+            continue
+        repaired_ops.append(rop)
+    if not repaired_ops:
+        for m in _FALLBACK_ASSIGN_RE.finditer(raw_source):
+            target = m.group(1).strip()
+            expr = m.group(2).strip()
+            repaired_ops.append({
+                "target": f"{target}[i]",
+                "expression": expr,
+                "op_type": _detect_op_type(expr),
+            })
+    repaired["operations"] = repaired_ops
+
+    # shared_memory
+    sm = repaired.get("shared_memory", [])
+    if not isinstance(sm, list):
+        sm = []
+    repaired_sm = []
+    for s in sm:
+        if not isinstance(s, dict):
+            continue
+        rs = {}
+        rs["name"] = str(s.get("name", "")).strip()
+        rs["base_type"] = str(s.get("base_type", "float")).strip()
+        rs["size_expression"] = str(s.get("size_expression", "extern")).strip()
+        if not rs["name"]:
+            continue
+        repaired_sm.append(rs)
+    if not repaired_sm:
+        for m in _FALLBACK_SHARED_RE.finditer(raw_source):
+            repaired_sm.append({
+                "name": m.group(2),
+                "base_type": m.group(1).replace('*', '').strip(),
+                "size_expression": m.group(3).strip(),
+            })
+        for m in _FALLBACK_EXTERN_SHARED_RE.finditer(raw_source):
+            repaired_sm.append({
+                "name": m.group(2),
+                "base_type": m.group(1).replace('*', '').strip(),
+                "size_expression": "extern",
+            })
+    repaired["shared_memory"] = repaired_sm
+
+    # local_variables
+    lv = repaired.get("local_variables", [])
+    if not isinstance(lv, list):
+        lv = []
+    repaired_lv = []
+    for v in lv:
+        if not isinstance(v, dict):
+            continue
+        rv = {}
+        rv["name"] = str(v.get("name", "")).strip()
+        rv["expression"] = str(v.get("expression", "")).strip()
+        if not rv["name"]:
+            continue
+        repaired_lv.append(rv)
+    repaired["local_variables"] = repaired_lv
+
+    # non_standard_annotations
+    nsa = repaired.get("non_standard_annotations", [])
+    if not isinstance(nsa, list):
+        nsa = []
+    repaired["non_standard_annotations"] = [str(a) for a in nsa]
+
+    return repaired
+
+
+def _extract_ir_from_source(raw_source: str) -> dict:
+    """Pure regex fallback: extract the full IR dict directly from CUDA source.
+
+    Strips comments first to avoid matching comment text as code.
+
+    Used when the LLM output is completely unusable (not a dict, or missing
+    all critical fields).  This ensures the pipeline can still proceed even
+    if the lite model returns garbage.
+    """
+    raw_source = _strip_comments(raw_source)
+    m = _FALLBACK_KERNEL_NAME_RE.search(raw_source)
+    kernel_name = m.group(1) if m else "unknown_kernel"
+
+    pm = _FALLBACK_PARAMS_RE.search(raw_source)
+    params = _parse_param_str_fallback(pm.group(1)) if pm else []
+
+    idx_type = _detect_indexing_type(raw_source)
+    im = _FALLBACK_INDEX_RE.search(raw_source)
+    index_var = im.group(1) if im else "i"
+
+    bm = _FALLBACK_BOUNDS_RE.search(raw_source)
+    has_bounds = bool(bm)
+    bounds_cond = bm.group(0) if bm else None
+
+    operations = []
+    for m in _FALLBACK_ASSIGN_RE.finditer(raw_source):
+        target = m.group(1).strip()
+        expr = m.group(2).strip()
+        operations.append({
+            "target": f"{target}[i]",
+            "expression": expr,
+            "op_type": _detect_op_type(expr),
+        })
+
+    shared_memory = []
+    for m in _FALLBACK_SHARED_RE.finditer(raw_source):
+        shared_memory.append({
+            "name": m.group(2),
+            "base_type": m.group(1).replace('*', '').strip(),
+            "size_expression": m.group(3).strip(),
+        })
+    for m in _FALLBACK_EXTERN_SHARED_RE.finditer(raw_source):
+        shared_memory.append({
+            "name": m.group(2),
+            "base_type": m.group(1).replace('*', '').strip(),
+            "size_expression": "extern",
+        })
+
+    local_variables = []
+    for m in re.finditer(r'(?:int|float|double)\s+(\w+)\s*=\s*([^;]+);', raw_source):
+        var_name = m.group(1).strip()
+        var_expr = m.group(2).strip()
+        if var_name in (index_var, 'i', 'tid'):
+            continue
+        local_variables.append({"name": var_name, "expression": var_expr})
+
+    return {
+        "kernel_name": kernel_name,
+        "parameters": params,
+        "thread_indexing": {
+            "type": idx_type,
+            "index_variable": index_var,
+        },
+        "bounds_check": {
+            "has_bounds_check": has_bounds,
+            "condition": bounds_cond,
+        },
+        "operations": operations,
+        "shared_memory": shared_memory,
+        "local_variables": local_variables,
+        "non_standard_annotations": [],
+    }
+
+
 def build_body_stmts_from_ir(ir: dict, n_param: str) -> str:
     """Reconstruct lowered C++ body statements from LLM-extracted IR.
 
@@ -979,14 +1293,14 @@ def kernel_to_vortex_cpp(
     # ── Scalar parameter declarations ─────────────────────────────────────
     scalar_decls = []
     for sp in ck.scalar_params:
+        if sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
+            continue
         if sp.name in init_values:
             val = init_values[sp.name]
             if isinstance(val, float):
                 val_str = f"{val}f"
             else:
                 val_str = str(val)
-        elif sp.name.upper() in ('N', 'SIZE', 'COUNT', 'LENGTH', 'LEN', 'NUM'):
-            val_str = str(N)
         else:
             if 'float' in sp.ctype or 'double' in sp.ctype:
                 val_str = "0.0f"
