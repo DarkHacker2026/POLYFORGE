@@ -358,6 +358,9 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
         lower_to_makefile(PROJ, VORTEX_HOME_WSL), encoding="utf-8"
     )
     print(f"         Generated {len(cpp_code)} bytes  ->  artifacts/{PROJ}/main.cpp")
+    print(f"\n--- GENERATED C++ ---")
+    print(cpp_code)
+    print("---------------------\n")
     print(f"         [OK] Lowering complete for kernel '{ck.name}'")
 
     # ── [5/5] RTL Simulation ──────────────────────────────────────────────
