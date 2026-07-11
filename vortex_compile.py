@@ -372,17 +372,11 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     # ── [5/5] RTL Simulation ──────────────────────────────────────────────
     print(f"\n[5/{total_stages}] RTL simulation (simx)...", flush=True)
 
-    wsl_root = "/home/dark_hacker/hackathon-project"
-    wsl_art = f"{wsl_root}/artifacts/{PROJ}"
-
-    r = run_wsl(f"test -d '{wsl_art}' && echo EXISTS || echo MISSING")
-    if "MISSING" in r.stdout:
-        print(f"[FAIL] WSL cannot access: {wsl_art}")
-        return 1
+    wsl_project_root = str(_ROOT).replace("\\", "/").replace("C:/", "/mnt/c/")
 
     print("         Invoking: make -C artifacts/" + PROJ + " run-simx")
     r = run_wsl(
-        f"cd ~/hackathon-project && source .wsl_env && "
+        f"source ~/hackathon-project/.wsl_env && cd '{wsl_project_root}' && "
         f"timeout 120 make -C artifacts/{PROJ} run-simx"
     )
 
