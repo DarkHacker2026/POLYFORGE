@@ -313,6 +313,11 @@ def main():
     def check_result(results, memory):
         if not ck.array_params:
             return True, "No arrays to check"
+        # Auto-oracle cannot model shared mem, barriers, or multi-dimensional indexing
+        if ck.has_syncthreads or ck.has_shared or ck.is_2d or ck.is_3d:
+            return True, "Complex kernel (shared mem/sync/2D/3D): numerical oracle skipped"
+        if op_det is None:
+            return True, "Non-trivial expression: numerical oracle skipped"
         dst = ck.array_params[-1]
         src_arrays = ck.array_params[:-1]
         errors = []

@@ -1161,21 +1161,13 @@ def kernel_to_oracle_ir(
 
     n_arrays = len(ck.array_params)
 
-    # For 2D/3D or atomic kernels, emit WRITE-only trace
-    complex_kernel = ck.is_2d or ck.is_3d or any(
-        w.category == 'atomic' for w in ck.warnings)
+    # Complex kernels (2D/3D, atomics, shared mem, syncthreads) cannot be
+    # verified by the simple auto-oracle. Emit minimal IR so the caller can
+    # detect op_detected=None and skip numerical verification.
+    complex_kernel = (ck.is_2d or ck.is_3d or ck.has_syncthreads or ck.has_shared
+                      or any(w.category == 'atomic' for w in ck.warnings))
     if complex_kernel:
-        dst = ck.array_params[-1] if ck.array_params else None
-        instr = [
-            {'op': 'THREAD_ID', 'dst': 'r10'},
-            {'op': 'SLLI', 'dst': 'r11', 'src1': 'r10', 'imm': 2},
-        ]
-        if dst and dst.name in bases:
-            instr += [
-                {'op': 'ADD', 'dst': 'r12', 'src1': f'r{n_arrays}', 'src2': 'r11'},
-                {'op': 'ADDI', 'dst': 'r13', 'src1': 'r0', 'imm': 0},
-                {'op': 'SW', 'src2': 'r13', 'base': 'r12', 'offset': 0},
-            ]
+        instr = [{'op': 'THREAD_ID', 'dst': 'r10'}]
         return instr, initial_mem, initial_regs, None
 
     # Simple element-wise: detect op from body
@@ -1188,17 +1180,15 @@ def kernel_to_oracle_ir(
 
     op_detected = None
     if rhs:
-        has_mul = '*' in rhs
-        has_add = '+' in rhs
-        has_sub = '-' in rhs
-        if has_mul and has_add:
+        # Conservative auto-detection: only match simple binary ops
+        # between exactly two arrays, or SAXPY between three arrays.
+        rhs_clean = re.sub(r'\w+\s*\[.*?\]', 'ARR', rhs)
+        operators = [c for c in rhs_clean if c in '+-*/']
+        arr_count = rhs_clean.count('ARR')
+        if arr_count == 2 and len(operators) == 1:
+            op_detected = {'+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV'}.get(operators[0])
+        elif arr_count == 3 and len(operators) == 2 and '*' in rhs_clean and '+' in rhs_clean:
             op_detected = 'SAXPY'
-        elif has_mul:
-            op_detected = 'MUL'
-        elif has_add:
-            op_detected = 'ADD'
-        elif has_sub:
-            op_detected = 'SUB'
 
     # Build IR
     instructions: list[dict] = [
