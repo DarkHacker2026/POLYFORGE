@@ -283,7 +283,7 @@ def main():
 
     instructions, initial_mem, per_thread_regs, op_det = kernel_to_oracle_ir(ck, N, init_values)
 
-    from cuda_parser import evaluate_cpp_ast, evaluate_clang_ast
+    from cuda_parser import evaluate_clang_ast
 
     # User-supplied test parameters for kernels where size is external to the kernel text
     test_params = {
