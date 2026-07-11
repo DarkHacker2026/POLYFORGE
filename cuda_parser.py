@@ -74,6 +74,8 @@ def build_body_stmts_from_ir(ir: dict, n_param: str) -> str:
                         'blockIdx', 'threadIdx', 'blockDim', 'gridDim'})
     for p in ir.get("parameters", []):
         known_names.add(p["name"])
+    for sm in ir.get("shared_memory", []):
+        known_names.add(sm["name"])
     c_keywords = {
         'int', 'float', 'double', 'char', 'void', 'auto', 'const', 'sizeof',
         'return', 'if', 'else', 'for', 'while', 'do', 'break', 'continue',
