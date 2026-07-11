@@ -236,7 +236,11 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
         from cuda_parser import evaluate_clang_ast
         env_b = {'math': math, 'N': N}
         expected_size = int(evaluate_clang_ast(gt_expr, env_b))
-        ck.verified_shared_buffers.append({"name": sm["name"], "size": expected_size})
+        ck.verified_shared_buffers.append({
+            "name": sm["name"],
+            "ctype": sm["base_type"],
+            "size_bytes": expected_size
+        })
         print(f"         Shared buffer '{sm['name']}' verified ({expected_size} bytes)")
 
     # Run oracle
