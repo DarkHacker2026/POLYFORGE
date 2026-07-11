@@ -125,16 +125,6 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
         print(f"         [OK] {llm_count} kernel(s) returned, no silent dropping detected")
 
     ir = all_irs[0]
-    # SABOTAGE TEST 3.3b: Corrupt local variable expression
-    if ir.get("local_variables"):
-        for lv in ir["local_variables"]:
-            if lv.get("name") == "d":
-                lv["expression"] = "99999"
-                print(f"[SABOTAGE] Corrupted local_variable 'd' expression to 99999")
-    # SABOTAGE TEST 3.3a: Corrupt op_type to wrong value
-    if ir.get("operations"):
-        ir["operations"][0]["op_type"] = "MUL"
-        print(f"[SABOTAGE] Forced op_type to 'MUL' (was probably ADD)")
 
     # Reject non-standard annotations (zero-trust gate)
     ns_annotations = ir.get("non_standard_annotations", [])
