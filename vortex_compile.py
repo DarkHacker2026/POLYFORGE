@@ -302,6 +302,7 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
             kernel_to_vortex_cpp, kernel_to_oracle_ir, describe_parse,
             evaluate_clang_ast,
             normalize_and_repair_ir,  # NEW: robust IR repair (Task 1)
+            _extract_defines, _extract_device_vars,  # NEW: handle #defines and __device__ vars
         )
         from cuda_surface import lower_to_makefile
         from reference_isa import verify_parallel_kernel
@@ -639,6 +640,29 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     else:
         macros = ""
 
+    # Extract #define macros from the CUDA source and pass them through
+    defines = _extract_defines(cuda_code)
+    if defines:
+        macros += defines + "\n"
+
+    # Extract __device__ variables and convert to global volatile arrays
+    device_vars = _extract_device_vars(cuda_code)
+    device_decls = ""
+    for dtype, dname, dsize, dinit in device_vars:
+        if 'float' in dtype:
+            vtype = 'float'
+        elif 'double' in dtype:
+            vtype = 'float'
+        else:
+            vtype = 'int32_t'
+        if dinit:
+            vals_str = ', '.join(str(v) for v in dinit)
+            device_decls += f'volatile {vtype} {dname}[{dsize}] = {{{vals_str}}};\n'
+        else:
+            device_decls += f'volatile {vtype} {dname}[{dsize}];\n'
+    if device_decls:
+        macros += device_decls
+
     print(f"         [DEBUG] init_values keys: {list(init_values.keys())}")
     print(f"         [DEBUG] array_params: {[p.name for p in ck.array_params]}")
     print(f"         [DEBUG] scalar_params: {[p.name for p in ck.scalar_params]}")
@@ -650,7 +674,18 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
         return 1
 
     if macros:
-        cpp_code = macros + cpp_code
+        # Insert macros AFTER the #include lines (not before) so that
+        # types like int32_t are defined before device var declarations
+        include_end = 0
+        for line in cpp_code.split('\n'):
+            if line.startswith('#include'):
+                include_end = cpp_code.index(line) + len(line) + 1
+            elif include_end > 0 and not line.startswith('#'):
+                break
+        if include_end > 0:
+            cpp_code = cpp_code[:include_end] + '\n' + macros + '\n' + cpp_code[include_end:]
+        else:
+            cpp_code = macros + cpp_code
 
     art_dir = _ROOT / "artifacts" / PROJ
     art_dir.mkdir(parents=True, exist_ok=True)

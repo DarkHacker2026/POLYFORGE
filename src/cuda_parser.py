@@ -80,6 +80,67 @@ def _strip_comments(source: str) -> str:
     return source
 
 
+def _extract_kernel_body(source: str) -> str:
+    """Extract just the __global__ kernel body, excluding host main() code.
+
+    This ensures the regex fallback only extracts operations from the kernel,
+    not from host code like main(), cudaMalloc, printf, etc.
+    """
+    # Find __global__ kernel and extract its body using brace matching
+    m = re.search(r'__global__\s+\w[\w\s\*]*\s+\w+\s*\([^)]*\)\s*\{', source)
+    if not m:
+        return source  # fallback to full source if no kernel found
+    start = m.end()  # position after opening brace
+    depth = 1
+    i = start
+    while i < len(source) and depth > 0:
+        if source[i] == '{':
+            depth += 1
+        elif source[i] == '}':
+            depth -= 1
+        i += 1
+    return source[start:i-1]  # exclude the closing brace
+
+
+def _extract_defines(source: str) -> str:
+    """Extract #define macros from source for pass-through to generated C++.
+
+    This ensures that constants like SCREEN_WIDTH, MAP_WIDTH, etc. are available
+    in the generated Vortex C++ code.
+    """
+    defines = []
+    for m in re.finditer(r'^\s*#define\s+(\w+)\s+(.+?)$', source, re.MULTILINE):
+        name = m.group(1)
+        value = m.group(2).strip()
+        defines.append(f"#define {name} {value}")
+    return "\n".join(defines)
+
+
+def _extract_device_vars(source: str) -> list:
+    """Extract __device__ variable declarations and convert to global arrays.
+
+    Finds patterns like:
+      __device__ const int d_map[64] = {...};
+      __device__ float d_buffer[128];
+
+    Returns a list of (ctype, name, size, init_values) tuples.
+    """
+    vars = []
+    # Match __device__ TYPE name[SIZE] = {...}; or __device__ TYPE name[SIZE];
+    for m in re.finditer(r'__device__\s+(?:const\s+)?(\w[\w\s\*]*?)\s+(\w+)\s*\[(\d+)\]\s*(?:=\s*\{([^}]*)\})?\s*;', source):
+        ctype = m.group(1).strip()
+        name = m.group(2)
+        size = int(m.group(3))
+        init = m.group(4)
+        if init:
+            # Parse the initializer values
+            vals = [v.strip() for v in init.split(',') if v.strip()]
+            vars.append((ctype, name, size, vals))
+        else:
+            vars.append((ctype, name, size, None))
+    return vars
+
+
 def _detect_indexing_type(source: str) -> str:
     """Detect thread indexing topology from raw source."""
     has_y = bool(re.search(r'blockIdx\.y|threadIdx\.y|blockDim\.y', source))
@@ -219,7 +280,8 @@ def normalize_and_repair_ir(ir: dict, raw_source: str) -> dict:
             continue
         repaired_ops.append(rop)
     if not repaired_ops:
-        for m in _FALLBACK_ASSIGN_RE.finditer(raw_source):
+        kernel_body = _extract_kernel_body(raw_source)
+        for m in _FALLBACK_ASSIGN_RE.finditer(kernel_body):
             target = m.group(1).strip()
             expr = m.group(2).strip()
             repaired_ops.append({
@@ -308,8 +370,10 @@ def _extract_ir_from_source(raw_source: str) -> dict:
     has_bounds = bool(bm)
     bounds_cond = bm.group(0) if bm else None
 
+    # Extract only the kernel body for operations (not host main() code)
+    kernel_body = _extract_kernel_body(raw_source)
     operations = []
-    for m in _FALLBACK_ASSIGN_RE.finditer(raw_source):
+    for m in _FALLBACK_ASSIGN_RE.finditer(kernel_body):
         target = m.group(1).strip()
         expr = m.group(2).strip()
         operations.append({
@@ -333,7 +397,8 @@ def _extract_ir_from_source(raw_source: str) -> dict:
         })
 
     local_variables = []
-    for m in re.finditer(r'(?:int|float|double)\s+(\w+)\s*=\s*([^;]+);', raw_source):
+    kernel_body_lv = _extract_kernel_body(raw_source)
+    for m in re.finditer(r'(?:int|float|double)\s+(\w+)\s*=\s*([^;]+);', kernel_body_lv):
         var_name = m.group(1).strip()
         var_expr = m.group(2).strip()
         if var_name in (index_var, 'i', 'tid'):
