@@ -835,7 +835,19 @@ class FireworksProvider(LLMProvider):
             try:
                 with urllib.request.urlopen(req, timeout=120) as resp:
                     raw = json.loads(resp.read().decode("utf-8"))
-                content = raw["choices"][0]["message"]["content"]
+                
+                choice = raw["choices"][0]
+                finish_reason = choice.get("finish_reason", "")
+                if finish_reason == "length":
+                    print(f"[LLM] Response truncated on attempt {attempt+1} (finish_reason=length)")
+                    if attempt < 2:
+                        messages.append({"role": "assistant", "content": ""})
+                        messages.append({"role": "user", "content": "Your previous response was truncated due to length. Please provide a more concise JSON response that fits within the token limit. Output ONLY the JSON object, with no extra text."})
+                        continue
+                    else:
+                        raise CompilerError("LLM response truncated on all 3 attempts")
+                
+                content = choice["message"]["content"]
                 if not content.strip():
                     raise CompilerError("Empty response from LLM")
                 
