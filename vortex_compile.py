@@ -125,6 +125,16 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
         print(f"         [OK] {llm_count} kernel(s) returned, no silent dropping detected")
 
     ir = all_irs[0]
+    # SABOTAGE TEST 3.3b: Corrupt local variable expression
+    if ir.get("local_variables"):
+        for lv in ir["local_variables"]:
+            if lv.get("name") == "d":
+                lv["expression"] = "99999"
+                print(f"[SABOTAGE] Corrupted local_variable 'd' expression to 99999")
+    # SABOTAGE TEST 3.3a: Corrupt op_type to wrong value
+    if ir.get("operations"):
+        ir["operations"][0]["op_type"] = "MUL"
+        print(f"[SABOTAGE] Forced op_type to 'MUL' (was probably ADD)")
 
     # Reject non-standard annotations (zero-trust gate)
     ns_annotations = ir.get("non_standard_annotations", [])
@@ -396,12 +406,14 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     cycles_val = int(m_cyc.group(1)) if m_cyc else -1
 
     print("\n" + "=" * 60)
-    if result_val == 0:
+    if result_val == 0 and oracle_passed:
         print(f"HARDWARE RESULT: PASSED  (SIMX_RESULT=0  cycles={cycles_val})")
         print("=" * 60)
         return 0
     else:
-        if r.returncode != 0 and result_val == -1:
+        if not oracle_passed:
+            print(f"HARDWARE RESULT: FAILED (Oracle rejected: {oracle_msg})")
+        elif r.returncode != 0 and result_val == -1:
             print(f"HARDWARE RESULT: FAILED (simx did not complete — exit {r.returncode})")
         else:
             print(f"HARDWARE RESULT: FAILED  (SIMX_RESULT={result_val}  cycles={cycles_val})")
