@@ -12,7 +12,10 @@ ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
 
 from grow_compiler import FireworksProvider, load_dotenv
-from cuda_parser import CUDAKernel, CUDAParam, kernel_to_vortex_cpp, kernel_to_oracle_ir, describe_parse
+from cuda_parser import (
+    CUDAKernel, CUDAParam, kernel_to_vortex_cpp, kernel_to_oracle_ir, describe_parse,
+    CUDA_UNEVALUABLE_EXPRS, build_body_stmts_from_ir,
+)
 from cuda_surface import lower_to_makefile
 from reference_isa import verify_parallel_kernel
 
@@ -182,37 +185,7 @@ def main():
 
         # Reconstruct a lowered body based purely on the LLM's semantic extraction
         # (This avoids all the brittle regex string replacements)
-        idx_var = ir["thread_indexing"]["index_variable"]
-        body_stmts = f"int {idx_var} = blockIdx.x * blockDim.x + threadIdx.x;\n"
-        if idx_var != 'tid':
-            body_stmts += "int tid = blockIdx.x * blockDim.x + threadIdx.x; (void)tid;\n"
-        if n_param != 'N':
-            body_stmts += f"int {n_param} = N; (void){n_param};\n"
-            
-        # Expressions the Oracle explicitly cannot evaluate — documented scope boundary.
-        # These are CUDA API calls or opaque handles that have no numeric meaning in the
-        # Oracle's reference environment. Skipping them is intentional scope reduction,
-        # not a silent fallback. All other unresolvable expressions will fail loud.
-        seen_vars = set()
-        for var in ir.get("local_variables", []):
-            if var['name'] in (idx_var, 'tid', n_param) or var['name'] in seen_vars:
-                continue
-            if var['expression'] in CUDA_UNEVALUABLE_EXPRS:
-                seen_vars.add(var['name'])
-                continue
-            seen_vars.add(var['name'])
-            body_stmts += f"auto {var['name']} = {var['expression']}; (void){var['name']};\n"
-        for op in ir["operations"]:
-            expr = op['expression']
-            target = op['target']
-            if "__half{" in expr:
-                expr = expr.replace("__half{", "(__half)(")
-                if expr.endswith("}"):
-                    expr = expr[:-1] + ")"
-            expr = re.sub(r'\b(float|int|uint32_t|int32_t)\((.*?)\)', r'(\1)(\2)', expr)
-            body_stmts += f"{target} = {expr};\nvx_fence();\n"
-            
-        body_stmts += f"if (vx_warp_id() == 1) warp1_ran = 1;\n"
+        body_stmts = build_body_stmts_from_ir(ir, n_param)
         ck = CUDAKernel(
             name=ir["kernel_name"],
             params=params,

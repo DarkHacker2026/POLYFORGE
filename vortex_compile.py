@@ -78,7 +78,8 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     provider = FireworksProvider()
 
     # Reuse the exact PROMPT from test_llm_comprehension.py
-    from test_llm_comprehension import PROMPT, CUDA_UNEVALUABLE_EXPRS, run_wsl, running_in_wsl
+    from test_llm_comprehension import PROMPT, run_wsl, running_in_wsl
+    from cuda_parser import CUDA_UNEVALUABLE_EXPRS, build_body_stmts_from_ir
 
     # Split source into per-kernel chunks (same as test_llm_comprehension.py)
     matches = list(re.finditer(r'(?:template\s*<[^>]+>\s*)?\b__global__\b', cuda_code))
@@ -167,32 +168,7 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
             n_param = p.name
             break
 
-    idx_var = ir["thread_indexing"]["index_variable"]
-    body_stmts = f"int {idx_var} = blockIdx.x * blockDim.x + threadIdx.x;\n"
-    if idx_var != 'tid':
-        body_stmts += "int tid = blockIdx.x * blockDim.x + threadIdx.x; (void)tid;\n"
-    if n_param != 'N':
-        body_stmts += f"int {n_param} = N; (void){n_param};\n"
-
-    seen_vars: set = set()
-    for var in ir.get("local_variables", []):
-        if var['name'] in (idx_var, 'tid', n_param) or var['name'] in seen_vars:
-            continue
-        if var['expression'] in CUDA_UNEVALUABLE_EXPRS:
-            seen_vars.add(var['name'])
-            continue
-        seen_vars.add(var['name'])
-        body_stmts += f"auto {var['name']} = {var['expression']}; (void){var['name']};\n"
-
-    for op in ir.get("operations", []):
-        expr = op['expression']
-        target = op['target']
-        if "__half{" in expr:
-            expr = expr.replace("__half{", "(__half)(")
-            if expr.endswith("}"):
-                expr = expr[:-1] + ")"
-        expr = re.sub(r'\b(float|int|uint32_t|int32_t)\((.*?)\)', r'(\1)(\2)', expr)
-        body_stmts += f"{target} = {expr};\nvx_fence();\n"
+    body_stmts = build_body_stmts_from_ir(ir, n_param)
 
     ck = CUDAKernel(
         name=ir["kernel_name"],

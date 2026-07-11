@@ -75,18 +75,31 @@ def save_json(path: Path, data: dict[str, Any]) -> None:
 
 def parse_json_response(text: str) -> dict[str, Any]:
     stripped = text.strip()
-    # Aggressively try to parse just the JSON block by finding the first '{' and last '}'
-    start = stripped.find('{')
-    end = stripped.rfind('}')
-    
-    if start != -1 and end != -1 and end > start:
-        json_str = stripped[start:end+1]
+
+    # Strategy 1: Extract from markdown code fences
+    fence_match = re.search(r'```(?:json)?\s*(.*?)\s*```', stripped, re.DOTALL)
+    if fence_match:
         try:
-            return json.loads(json_str)
+            return json.loads(fence_match.group(1))
         except json.JSONDecodeError:
             pass
-            
-    # Fallback to the original attempt
+
+    # Strategy 2: Find first '{' and track depth to locate the matching '}'
+    start = stripped.find('{')
+    if start != -1:
+        depth = 0
+        for i in range(start, len(stripped)):
+            if stripped[i] == '{':
+                depth += 1
+            elif stripped[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    try:
+                        return json.loads(stripped[start:i + 1])
+                    except json.JSONDecodeError:
+                        break
+
+    # Strategy 3: Fallback to full text
     try:
         return json.loads(stripped)
     except json.JSONDecodeError as exc:
