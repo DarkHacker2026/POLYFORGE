@@ -863,7 +863,15 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str =
         return 0
     elif result_val == 0 and not oracle_passed and not oracle_skipped:
         # Hardware passed but Oracle explicitly FAILED — this is a verification failure
-        error_msg = f"Oracle FAILED while hardware passed: {oracle_msg}"
+        # The Oracle caught a bug that didn't manifest in this particular hardware run
+        error_msg = (
+            f"Oracle REJECTED this kernel (hardware passed by luck, not by correctness):\n"
+            f"  {oracle_msg}\n"
+            f"  The hardware produced correct results THIS run, but the Oracle detected\n"
+            f"  a verification failure that makes parallel execution UNSAFE.\n"
+            f"  This is exactly what the Zero-Trust Oracle is designed to catch —\n"
+            f"  bugs that don't always manifest on hardware."
+        )
         print_cuda_style_failure(error_msg, r.stdout)
         return 1
     else:
