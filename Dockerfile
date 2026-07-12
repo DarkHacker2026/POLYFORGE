@@ -2,9 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install system dependencies (none needed beyond what's in slim)
+# Install system dependencies including libclang for the Oracle (Clang AST)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    libclang-dev \
+    clang \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements first for better layer caching
