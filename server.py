@@ -148,6 +148,7 @@ class CompileResponse(BaseModel):
     exit_code: int
     generated_cpp: str = ""
     generated_ir: str = ""
+    diagnosis: dict = {}
 
 
 class RtlAnalyzeRequest(BaseModel):
@@ -158,6 +159,168 @@ class RtlAnalyzeResponse(BaseModel):
     target: str
     capabilities: dict
     raw_output: str
+
+
+# ─── Diagnosis Generator ─────────────────────────────────────────────────
+
+import re as _re
+
+def _generate_diagnosis(stdout: str, stderr: str, exit_code: int) -> dict:
+    """Parse pipeline output and generate a human-readable diagnosis.
+
+    Returns a dict with:
+      - status: "pass" | "fail" | "warning"
+      - summary: one-line verdict
+      - issues: list of {severity, title, detail, fix}
+      - stages: dict of stage_name -> stage_status
+    """
+    diag = {
+        "status": "pass" if exit_code == 0 else "fail",
+        "summary": "",
+        "issues": [],
+        "stages": {},
+    }
+
+    combined = stdout + "\n" + stderr
+
+    # ── Parse stage results ──
+    # LLM stage
+    if "[2/5]" in combined:
+        if "parsed OK" in combined:
+            diag["stages"]["llm_comprehension"] = "passed"
+        elif "FALLBACK" in combined:
+            diag["stages"]["llm_comprehension"] = "fallback"
+            diag["issues"].append({
+                "severity": "warning",
+                "title": "LLM parsing used regex fallback",
+                "detail": "The LLM could not parse the kernel correctly. POLYFORGE fell back to regex extraction, which may miss complex patterns.",
+                "fix": "Simplify the kernel syntax or check the LLM API key.",
+            })
+        elif "FAIL" in combined and "LLM" in combined.split("[2/5]")[1].split("[3/5]")[0]:
+            diag["stages"]["llm_comprehension"] = "failed"
+            diag["issues"].append({
+                "severity": "critical",
+                "title": "LLM comprehension failed",
+                "detail": "The AI could not understand the kernel and regex fallback also failed.",
+                "fix": "Ensure the kernel has a standard __global__ signature with typed parameters.",
+            })
+
+    # Oracle stage
+    if "[3/5]" in combined:
+        if "Oracle VERIFIED" in combined:
+            diag["stages"]["oracle_verification"] = "passed"
+        elif "Oracle SKIPPED" in combined:
+            diag["stages"]["oracle_verification"] = "skipped"
+            diag["issues"].append({
+                "severity": "info",
+                "title": "Oracle verification skipped",
+                "detail": "The Oracle could not numerically verify this kernel (e.g., shared memory kernel).",
+                "fix": "No action needed — this is expected for certain kernel types.",
+            })
+        elif "Oracle FAILED" in combined or "Oracle REJECTED" in combined:
+            diag["stages"]["oracle_verification"] = "failed"
+            # Determine the specific reason
+            if "Data race detected" in combined or "RAW/WAR hazard" in combined:
+                diag["issues"].append({
+                    "severity": "critical",
+                    "title": "⚠️ Data Race Detected (RAW/WAR Hazard)",
+                    "detail": "Your kernel reads from array elements that adjacent parallel threads are simultaneously writing to. "
+                              "This creates a Read-After-Write or Write-After-Read hazard. The result depends on thread scheduling — "
+                              "it may work sometimes but produce wrong results other times.",
+                    "fix": "Use __shared__ memory to let each thread read its neighbors' original values before anyone writes, "
+                           "then call __syncthreads() before writing results back. Or redesign the algorithm to avoid cross-thread dependencies.",
+                })
+            elif "Cannot evaluate local_variable" in combined:
+                diag["issues"].append({
+                    "severity": "critical",
+                    "title": "Oracle cannot evaluate a variable",
+                    "detail": "The Oracle tried to simulate your kernel but couldn't compute a local variable. "
+                              "This usually means the LLM extracted an expression the Oracle can't evaluate.",
+                    "fix": "Simplify the kernel expressions or add the variable to test_params in the pipeline config.",
+                })
+            elif "non_standard_annotations" in combined:
+                diag["issues"].append({
+                    "severity": "critical",
+                    "title": "Non-standard CUDA annotations",
+                    "detail": "The kernel uses annotations that don't exist in standard CUDA.",
+                    "fix": "Remove non-standard annotations and use only standard CUDA keywords.",
+                })
+            else:
+                diag["issues"].append({
+                    "severity": "critical",
+                    "title": "Oracle verification failed",
+                    "detail": "The independent Oracle could not verify the kernel's correctness.",
+                    "fix": "Check the terminal output for the specific error message.",
+                })
+
+    # Lowering stage
+    if "[4/5]" in combined:
+        if "Lowering complete" in combined:
+            diag["stages"]["code_lowering"] = "passed"
+        elif "Lowering failed" in combined:
+            diag["stages"]["code_lowering"] = "failed"
+            diag["issues"].append({
+                "severity": "critical",
+                "title": "Code lowering failed",
+                "detail": "The compiler could not generate C++ code for the target architecture.",
+                "fix": "Check if the kernel uses features unsupported on the selected target.",
+            })
+
+    # Execution stage
+    if "[5/5]" in combined:
+        if "SIMX_RESULT=0" in combined or "Passed!" in combined:
+            diag["stages"]["hardware_execution"] = "passed"
+        elif "Failed!" in combined or "SIMX_RESULT=" in combined:
+            # Check if it's a non-zero result
+            m = _re.search(r'SIMX_RESULT=(\d+)', combined)
+            if m and int(m.group(1)) != 0:
+                diag["stages"]["hardware_execution"] = "failed"
+                diag["issues"].append({
+                    "severity": "critical",
+                    "title": "Hardware execution produced wrong results",
+                    "detail": f"The compiled kernel ran on the target but produced incorrect output (SIMX_RESULT={m.group(1)}).",
+                    "fix": "Check the generated C++ code for lowering errors. The kernel may use features not correctly translated.",
+                })
+            elif "TIMEOUT" in combined:
+                diag["stages"]["hardware_execution"] = "timeout"
+                diag["issues"].append({
+                    "severity": "warning",
+                    "title": "Hardware execution timed out",
+                    "detail": "The kernel took too long to execute on the target.",
+                    "fix": "Reduce the problem size or simplify the kernel.",
+                })
+
+    # Kernel drop detection
+    if "kernel dropping" in combined.lower() or "silent dropping" in combined.lower():
+        diag["issues"].append({
+            "severity": "critical",
+            "title": "Kernel was silently dropped",
+            "detail": "The LLM failed to extract one or more kernels from the source, which means code would be lost in production.",
+            "fix": "Use --kernel NAME to target a specific kernel, or simplify the kernel signatures.",
+        })
+
+    # Connection errors
+    if "ERROR" in combined and "server" in combined.lower():
+        diag["issues"].append({
+            "severity": "warning",
+            "title": "Server connection error",
+            "detail": "Could not reach the POLYFORGE backend server.",
+            "fix": "Make sure the server is running: uvicorn server:app --reload",
+        })
+
+    # ── Generate summary ──
+    if exit_code == 0 and not diag["issues"]:
+        diag["summary"] = "✅ All pipeline stages passed — kernel verified and executed correctly."
+    elif exit_code == 0 and any(i["severity"] == "warning" for i in diag["issues"]):
+        diag["status"] = "warning"
+        diag["summary"] = "⚠️ Kernel executed successfully, but with warnings — see issues below."
+    elif exit_code == 0 and any(i["severity"] == "critical" for i in diag["issues"]):
+        diag["status"] = "fail"
+        diag["summary"] = "❌ Hardware passed but Oracle REJECTED this kernel — it's unsafe for production."
+    else:
+        diag["summary"] = "❌ Pipeline failed — see issues below for details."
+
+    return diag
 
 
 # ─── Endpoints ───────────────────────────────────────────────────────────
@@ -200,12 +363,16 @@ def compile_cuda(req: CompileRequest):
         if (art_dir / "kernel.ir.json").exists():
             generated_ir = (art_dir / "kernel.ir.json").read_text(encoding="utf-8")
 
+        # ── Generate diagnosis from pipeline output ──
+        diagnosis = _generate_diagnosis(result.stdout, result.stderr, result.returncode)
+
         return CompileResponse(
             stdout=result.stdout,
             stderr=result.stderr,
             exit_code=result.returncode,
             generated_cpp=generated_cpp,
             generated_ir=generated_ir,
+            diagnosis=diagnosis,
         )
     except subprocess.TimeoutExpired:
         return CompileResponse(
