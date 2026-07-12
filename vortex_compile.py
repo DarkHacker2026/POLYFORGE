@@ -257,13 +257,25 @@ def filter_simx_debug(stdout: str) -> str:
 
 
 def check_wsl():
-    """Check WSL availability with transparent output."""
-    r = subprocess.run(["wsl.exe", "--status"], capture_output=True, text=True)
-    if r.returncode != 0:
-        print("ERROR: WSL2 is not available or not configured.", flush=True)
-        print("POLYFORGE hardware execution requires WSL2 + Vortex SIMX.")
-        print("See QUICKSTART.md for setup instructions.")
-        sys.exit(1)
+    """Check WSL availability with transparent output.
+    
+    On Linux/Render, wsl.exe doesn't exist — return False gracefully.
+    On Windows, check if WSL is configured.
+    """
+    try:
+        r = subprocess.run(["wsl.exe", "--status"], capture_output=True, text=True)
+        if r.returncode != 0:
+            print("ERROR: WSL2 is not available or not configured.", flush=True)
+            print("POLYFORGE hardware execution requires WSL2 + Vortex SIMX.")
+            print("See QUICKSTART.md for setup instructions.")
+            return False
+        return True
+    except FileNotFoundError:
+        # Running on Linux/Render — no WSL available
+        print("         [INFO] WSL not available (Linux/Render environment).", flush=True)
+        print("         [INFO] Vortex RTL simulation requires WSL2 + Windows.", flush=True)
+        print("         [INFO] Use x86_64 or other non-Vortex targets on this platform.", flush=True)
+        return False
 
 
 def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str = "vortex") -> int:

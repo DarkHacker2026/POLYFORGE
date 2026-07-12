@@ -138,7 +138,7 @@ TARGETS = [
 
 class CompileRequest(BaseModel):
     cuda_code: str
-    target: str = "vortex"
+    target: str = "x86_64"  # Default to x86_64 on Render (Vortex needs WSL)
     ram_mb: int = 4096
 
 
