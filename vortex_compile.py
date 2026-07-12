@@ -266,12 +266,15 @@ def check_wsl():
         sys.exit(1)
 
 
-def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
+def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str = "vortex") -> int:
     """
     Run the full pipeline on a .cu file by delegating to test_llm_comprehension.py.
     Returns exit code: 0 for SIMX_RESULT=0, 1 otherwise.
+    target: "vortex", "x86_64", "arm_a72", "arm_m0", "riscv_generic"
     """
-    check_wsl()
+    # Only Vortex needs WSL
+    if target == "vortex":
+        check_wsl()
     total_stages = 5
     cu_path = pathlib.Path(cuda_file)
 
@@ -629,8 +632,15 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
         print(f"         [FAIL] Oracle FAILED — {oracle_msg}")
         print(f"         op_detected={op_detected}")
 
-    # ── [4/5] Vortex C++ lowering ─────────────────────────────────────────
-    print(f"\n[4/{total_stages}] Lowering to Vortex C++...", flush=True)
+    # ── [4/5] C++ lowering (target-aware) ─────────────────────────────────
+    target_label = {
+        "vortex": "Vortex RISC-V GPU C++",
+        "x86_64": "x86-64 C++ (pthreads)",
+        "arm_a72": "ARM Cortex-A72 C++ (pthreads + NEON)",
+        "arm_m0": "ARM Cortex-M0 C (serial)",
+        "riscv_generic": "RISC-V Generic C (serial, RV32IM)",
+    }.get(target, target)
+    print(f"\n[4/{total_stages}] Lowering to {target_label}...", flush=True)
 
     PROJ = "llm_comprehension_test"
     VORTEX_HOME_WSL = "/home/dark_hacker/hackathon-project/vendor/vortex"
@@ -673,7 +683,13 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     print(f"         [DEBUG] scalar_params: {[p.name for p in ck.scalar_params]}")
 
     try:
-        cpp_code = kernel_to_vortex_cpp(ck, simt_facts, N, init_values, op_detected)
+        if target == "vortex":
+            cpp_code = kernel_to_vortex_cpp(ck, simt_facts, N, init_values, op_detected)
+        else:
+            # Multi-target lowering
+            sys.path.insert(0, str(_ROOT / "src"))
+            from multi_target_lowering import lower_kernel
+            cpp_code, mk_content = lower_kernel(ck, simt_facts, N, init_values, op_detected, target)
     except Exception as e:
         print(f"[FAIL] Lowering failed: {e}")
         return 1
@@ -695,31 +711,56 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     art_dir = _ROOT / "artifacts" / PROJ
     art_dir.mkdir(parents=True, exist_ok=True)
     (art_dir / "main.cpp").write_text(cpp_code, encoding="utf-8")
-    (art_dir / "Makefile").write_text(
-        lower_to_makefile(PROJ, VORTEX_HOME_WSL), encoding="utf-8"
-    )
+    if target == "vortex":
+        (art_dir / "Makefile").write_text(
+            lower_to_makefile(PROJ, VORTEX_HOME_WSL), encoding="utf-8"
+        )
+    else:
+        (art_dir / "Makefile").write_text(mk_content, encoding="utf-8")
     print(f"         Generated {len(cpp_code)} bytes  ->  artifacts/{PROJ}/main.cpp")
     print(f"\n--- GENERATED C++ ---")
     print(cpp_code)
     print("---------------------\n")
     print(f"         [OK] Lowering complete for kernel '{ck.name}'")
 
-    # ── [5/5] RTL Simulation ──────────────────────────────────────────────
-    print(f"\n[5/{total_stages}] RTL simulation (simx)...", flush=True)
+    # ── [5/5] Execution ──────────────────────────────────────────────────
+    if target == "vortex":
+        print(f"\n[5/{total_stages}] RTL simulation (simx)...", flush=True)
 
-    wsl_project_root = str(_ROOT).replace("\\", "/").replace("C:/", "/mnt/c/")
+        wsl_project_root = str(_ROOT).replace("\\", "/").replace("C:/", "/mnt/c/")
 
-    # TASK 2: Stream all output in real-time for full transparency
-    print("         Invoking: make -C artifacts/" + PROJ + " run-simx", flush=True)
-    print("         --- Live simx output (streaming) ---", flush=True)
+        print("         Invoking: make -C artifacts/" + PROJ + " run-simx", flush=True)
+        print("         --- Live simx output (streaming) ---", flush=True)
 
-    r = run_wsl_streaming(
-        f"source ~/hackathon-project/.wsl_env && cd '{wsl_project_root}' && "
-        f"timeout 120 make -C artifacts/{PROJ} run-simx",
-        timeout=130
-    )
+        r = run_wsl_streaming(
+            f"source ~/hackathon-project/.wsl_env && cd '{wsl_project_root}' && "
+            f"timeout 120 make -C artifacts/{PROJ} run-simx",
+            timeout=130
+        )
 
-    print("         --- End live simx output ---", flush=True)
+        print("         --- End live simx output ---", flush=True)
+    else:
+        # Use WSL for compilation and execution of non-vortex targets
+        runner_label = {
+            "x86_64": "Native x86-64 execution (WSL g++)",
+            "arm_a72": "QEMU ARM A72 execution (WSL cross-compile)",
+            "arm_m0": "QEMU ARM M0 execution (WSL cross-compile)",
+            "riscv_generic": "QEMU RISC-V execution (WSL cross-compile)",
+        }.get(target, target)
+        print(f"\n[5/{total_stages}] {runner_label}...", flush=True)
+
+        wsl_project_root = str(_ROOT).replace("\\", "/").replace("C:/", "/mnt/c/")
+        art_wsl_path = f"{wsl_project_root}/artifacts/{PROJ}"
+
+        print(f"         Invoking: make -C {art_wsl_path} run", flush=True)
+        print("         --- Live output (streaming) ---", flush=True)
+
+        r = run_wsl_streaming(
+            f"cd '{wsl_project_root}' && timeout 60 make -C artifacts/{PROJ} run",
+            timeout=70
+        )
+
+        print("         --- End live output ---", flush=True)
 
     # Parse results from captured output
     m_res = re.search(r'SIMX_RESULT=(\d+)', r.stdout)
@@ -777,8 +818,14 @@ def main():
         "--kernel", metavar="NAME", default=None,
         help="Target a single kernel by name (for multi-kernel files)",
     )
+    p.add_argument(
+        "--target", default=None,
+        help="Hardware target: vortex (default), x86_64, arm_a72, arm_m0, riscv_generic",
+    )
     args = p.parse_args()
-    sys.exit(run_pipeline(args.cuda_file, kernel_filter=args.kernel))
+    # Target from --target flag or POLYFORGE_TARGET env var
+    target = args.target or os.environ.get("POLYFORGE_TARGET", "vortex")
+    sys.exit(run_pipeline(args.cuda_file, kernel_filter=args.kernel, target=target))
 
 
 if __name__ == "__main__":
