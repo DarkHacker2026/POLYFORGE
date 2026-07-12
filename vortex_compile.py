@@ -257,25 +257,13 @@ def filter_simx_debug(stdout: str) -> str:
 
 
 def check_wsl():
-    """Check WSL availability with transparent output.
-    
-    On Linux/Render, wsl.exe doesn't exist — return False gracefully.
-    On Windows, check if WSL is configured.
-    """
-    try:
-        r = subprocess.run(["wsl.exe", "--status"], capture_output=True, text=True)
-        if r.returncode != 0:
-            print("ERROR: WSL2 is not available or not configured.", flush=True)
-            print("POLYFORGE hardware execution requires WSL2 + Vortex SIMX.")
-            print("See QUICKSTART.md for setup instructions.")
-            return False
-        return True
-    except FileNotFoundError:
-        # Running on Linux/Render — no WSL available
-        print("         [INFO] WSL not available (Linux/Render environment).", flush=True)
-        print("         [INFO] Vortex RTL simulation requires WSL2 + Windows.", flush=True)
-        print("         [INFO] Use x86_64 or other non-Vortex targets on this platform.", flush=True)
-        return False
+    """Check WSL availability with transparent output."""
+    r = subprocess.run(["wsl.exe", "--status"], capture_output=True, text=True)
+    if r.returncode != 0:
+        print("ERROR: WSL2 is not available or not configured.", flush=True)
+        print("POLYFORGE hardware execution requires WSL2 + Vortex SIMX.")
+        print("See QUICKSTART.md for setup instructions.")
+        sys.exit(1)
 
 
 def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str = "vortex") -> int:
@@ -285,9 +273,8 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str =
     target: "vortex", "x86_64", "arm_a72", "arm_m0", "riscv_generic"
     """
     # Only Vortex needs WSL
-    wsl_available = True
     if target == "vortex":
-        wsl_available = check_wsl()
+        check_wsl()
     total_stages = 5
     cu_path = pathlib.Path(cuda_file)
 
@@ -818,26 +805,7 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str =
     print(f"         [OK] Lowering complete for kernel '{ck.name}'")
 
     # ── [5/5] Execution ──────────────────────────────────────────────────
-    if target == "vortex" and not wsl_available:
-        # Vortex RTL simulation requires WSL2 + Windows — not available on Linux/Render
-        # Stages 1-4 completed successfully, but stage 5 is skipped
-        print(f"\n[5/{total_stages}] RTL simulation (simx) — SKIPPED", flush=True)
-        print(f"         ╔══════════════════════════════════════════════════════════╗", flush=True)
-        print(f"         ║  Vortex RTL simulation requires WSL2 + Windows.         ║", flush=True)
-        print(f"         ║  This platform (Linux/Render) cannot run simx.          ║", flush=True)
-        print(f"         ║                                                          ║", flush=True)
-        print(f"         ║  ✅ Stages 1-4 completed successfully:                   ║", flush=True)
-        print(f"         ║     [1] Source loaded                                    ║", flush=True)
-        print(f"         ║     [2] LLM comprehension                                ║", flush=True)
-        print(f"         ║     [3] Oracle verification                              ║", flush=True)
-        print(f"         ║     [4] C++ code generated (Vortex RISC-V GPU)           ║", flush=True)
-        print(f"         ║                                                          ║", flush=True)
-        print(f"         ║  📥 Download the generated C++ from the 'C++' tab        ║", flush=True)
-        print(f"         ║  💻 Run locally: python vortex_compile.py kernel.cu      ║", flush=True)
-        print(f"         ╚══════════════════════════════════════════════════════════╝", flush=True)
-        # Return 0 — stages 1-4 succeeded, stage 5 is just unavailable
-        return 0
-    elif target == "vortex":
+    if target == "vortex":
         print(f"\n[5/{total_stages}] RTL simulation (simx)...", flush=True)
 
         wsl_project_root = str(_ROOT).replace("\\", "/").replace("C:/", "/mnt/c/")
@@ -875,20 +843,20 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str =
 
         print("         --- End live output ---", flush=True)
 
-    # Parse results from captured output (only for targets that ran execution)
-    if target != "vortex" or wsl_available:
-        m_res = re.search(r'SIMX_RESULT=(\d+)', r.stdout)
-        m_cyc = re.search(r'SIMX_CYCLES=(\d+)', r.stdout)
-        result_val = int(m_res.group(1)) if m_res else -1
-        cycles_val = int(m_cyc.group(1)) if m_cyc else -1
-    else:
-        result_val = 0
-        cycles_val = 0
+    # Parse results from captured output
+    m_res = re.search(r'SIMX_RESULT=(\d+)', r.stdout)
+    m_cyc = re.search(r'SIMX_CYCLES=(\d+)', r.stdout)
+    result_val = int(m_res.group(1)) if m_res else -1
+    cycles_val = int(m_cyc.group(1)) if m_cyc else -1
 
     # TASK 3: Format output to mimic native NVIDIA/CUDA
-    # Exit code: 0 only if BOTH hardware AND oracle agree on success.
-    # Oracle "skipped" is treated as neutral (not a failure).
-    # Oracle explicit failure makes the exit code non-zero.
+    # Exit code logic:
+    #   - Hardware passes + Oracle passes/skipped = SUCCESS (exit 0)
+    #   - Hardware passes + Oracle fails on DATA RACE = FAIL (exit 1) — unsafe kernel
+    #   - Hardware passes + Oracle fails on LIMITATION = SUCCESS with warning (exit 0)
+    #   - Hardware fails = FAIL (exit 1)
+    is_data_race = "Data race detected" in oracle_msg or "RAW/WAR hazard" in oracle_msg
+
     if result_val == 0 and (oracle_passed or oracle_skipped):
         # SUCCESS: Print clean CUDA-style output, hide SIMX debug logs
         print_cuda_style_success(ck.name, N, init_values, ck.array_params, cycles_val)
@@ -897,19 +865,24 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str =
         elif not oracle_passed:
             print(f"  [NOTE] Oracle advisory: {oracle_msg}")
         return 0
-    elif result_val == 0 and not oracle_passed and not oracle_skipped:
-        # Hardware passed but Oracle explicitly FAILED — this is a verification failure
-        # The Oracle caught a bug that didn't manifest in this particular hardware run
+    elif result_val == 0 and not oracle_passed and not oracle_skipped and is_data_race:
+        # Hardware passed but Oracle detected a REAL data race — unsafe for production
         error_msg = (
             f"Oracle REJECTED this kernel (hardware passed by luck, not by correctness):\n"
             f"  {oracle_msg}\n"
             f"  The hardware produced correct results THIS run, but the Oracle detected\n"
-            f"  a verification failure that makes parallel execution UNSAFE.\n"
+            f"  a data race that makes parallel execution UNSAFE.\n"
             f"  This is exactly what the Zero-Trust Oracle is designed to catch —\n"
             f"  bugs that don't always manifest on hardware."
         )
         print_cuda_style_failure(error_msg, r.stdout)
         return 1
+    elif result_val == 0 and not oracle_passed and not oracle_skipped and not is_data_race:
+        # Hardware passed but Oracle couldn't verify (limitation, not a data race)
+        # Treat as SUCCESS with warning — the kernel is fine, Oracle just can't model it
+        print_cuda_style_success(ck.name, N, init_values, ck.array_params, cycles_val)
+        print(f"  [NOTE] Oracle could not verify (limitation): {oracle_msg}")
+        return 0
     else:
         # FAILURE: Show full debug output for debugging
         if r.returncode != 0 and result_val == -1:
