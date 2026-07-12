@@ -1,19 +1,21 @@
-FROM ubuntu:22.04
-
-RUN apt-get update && apt-get install -y \
-    python3.11 \
-    python3-pip \
-    libclang-dev \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+FROM python:3.11-slim
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+# Install system dependencies (none needed beyond what's in slim)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
+# Copy requirements first for better layer caching
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy the entire project
 COPY . .
 
-# NOTE: Hardware execution (Stage 6) requires WSL2 on Windows host.
-# This image runs Stages 1-5: Oracle + Lowering demo.
-ENTRYPOINT ["python", "demo_offline.py"]
+# Expose the FastAPI port
+EXPOSE 10000
+
+# Run the server
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "10000"]
