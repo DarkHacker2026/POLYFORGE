@@ -138,7 +138,7 @@ TARGETS = [
 
 class CompileRequest(BaseModel):
     cuda_code: str
-    target: str = "x86_64"  # Default to x86_64 on Render (Vortex needs WSL)
+    target: str = "vortex"
     ram_mb: int = 4096
 
 
@@ -290,8 +290,9 @@ def _generate_diagnosis(stdout: str, stderr: str, exit_code: int) -> dict:
                     "fix": "Reduce the problem size or simplify the kernel.",
                 })
 
-    # Kernel drop detection
-    if "kernel dropping" in combined.lower() or "silent dropping" in combined.lower():
+    # Kernel drop detection — only flag if it's an actual failure, not "no silent dropping detected"
+    if ("HARD ERROR" in combined and "kernel dropping" in combined.lower()) or \
+       ("dropped" in combined.lower() and "no silent dropping" not in combined.lower() and "not allowed" in combined.lower()):
         diag["issues"].append({
             "severity": "critical",
             "title": "Kernel was silently dropped",
@@ -476,21 +477,6 @@ def analyze_rtl(req: RtlAnalyzeRequest):
         capabilities=capabilities,
         raw_output=raw_output,
     )
-
-
-@app.get("/")
-def root():
-    return {
-        "service": "POLYFORGE API",
-        "version": "1.0.0",
-        "endpoints": {
-            "POST /api/compile": "Compile CUDA kernel",
-            "GET /api/targets": "List hardware targets",
-            "POST /api/rtl/analyze": "Analyze RTL capabilities",
-            "GET /api/health": "Health check",
-        },
-        "docs": "/docs",
-    }
 
 
 @app.get("/api/health")
