@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POLYFORGE — Any CUDA. Any Hardware. Verified.</title>
+  <meta name="description" content="POLYFORGE is an AI-powered CUDA-to-any-hardware compiler with a Zero-Trust Oracle that mathematically verifies kernels before deployment." />
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;800&family=JetBrains+Mono:wght@400;700&display=swap');
+
+    :root {
+      --red: #ed1c24;
+      --blue: #00d2ff;
+      --green: #10b981;
+      --bg: #0a0a0f;
+      --surface: rgba(255,255,255,0.03);
+      --border: rgba(255,255,255,0.08);
+      --text: #e8e8ec;
+      --text2: #9a9aa8;
+      --text3: #5a5a6e;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      line-height: 1.6;
+      overflow-x: hidden;
+      min-height: 100vh;
+    }
+
+    /* Background orbs */
+    .bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; overflow: hidden; }
+    .orb { position: absolute; border-radius: 50%; filter: blur(150px); opacity: 0.35; }
+    .orb-red { width: 700px; height: 700px; background: radial-gradient(circle, rgba(237,28,36,0.4), transparent 70%); top: -15%; left: -10%; animation: float 25s ease-in-out infinite; }
+    .orb-blue { width: 600px; height: 600px; background: radial-gradient(circle, rgba(0,210,255,0.25), transparent 70%); bottom: -15%; right: -10%; animation: float 25s ease-in-out infinite reverse; }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0,0) scale(1); }
+      33% { transform: translate(40px,-40px) scale(1.08); }
+      66% { transform: translate(-30px,30px) scale(0.92); }
+    }
+
+    .container { position: relative; z-index: 1; max-width: 800px; margin: 0 auto; padding: 0 2rem; }
+
+    /* Nav */
+    nav { display: flex; justify-content: space-between; align-items: center; padding: 1.2rem 2.5rem; position: fixed; top: 0; left: 0; width: 100%; z-index: 100; background: rgba(10,10,15,0.7); backdrop-filter: blur(24px); border-bottom: 1px solid var(--border); }
+    .logo { font-weight: 800; font-size: 1.4rem; letter-spacing: 4px; color: #fff; }
+    .logo span { color: var(--red); }
+    .nav-links { display: flex; gap: 2rem; }
+    .nav-links a { color: var(--text2); text-decoration: none; font-size: 0.85rem; font-weight: 500; transition: color 0.3s; }
+    .nav-links a:hover { color: #fff; }
+
+    /* Hero */
+    .hero { min-height: 100vh; display: flex; justify-content: center; align-items: center; text-align: center; padding: 6rem 2rem 4rem; }
+    .hero-inner { max-width: 700px; }
+    .hero-tag { font-size: 0.75rem; letter-spacing: 3px; text-transform: uppercase; color: var(--text3); margin-bottom: 2rem; }
+    .hero-title { font-size: 4.5rem; font-weight: 800; line-height: 1.05; margin-bottom: 1.5rem; }
+    .hero-line { display: block; opacity: 0; animation: fadeIn 0.8s ease forwards; }
+    .hero-line:nth-child(1) { animation-delay: 0.1s; }
+    .hero-line:nth-child(2) { animation-delay: 0.3s; }
+    .hero-line:nth-child(3) { animation-delay: 0.5s; color: var(--red); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
+
+    .hero-desc { font-size: 1.15rem; color: var(--text2); max-width: 550px; margin: 0 auto 2.5rem; opacity: 0; animation: fadeIn 0.8s ease forwards 0.7s; }
+    .hero-btns { display: flex; gap: 1rem; justify-content: center; opacity: 0; animation: fadeIn 0.8s ease forwards 0.9s; }
+
+    .btn { display: inline-block; padding: 0.85rem 2rem; border-radius: 6px; font-size: 0.9rem; font-weight: 600; text-decoration: none; cursor: pointer; border: none; transition: all 0.3s; letter-spacing: 0.5px; }
+    .btn-red { background: var(--red); color: #fff; }
+    .btn-red:hover { box-shadow: 0 0 30px rgba(237,28,36,0.5); transform: translateY(-2px); }
+    .btn-outline { background: transparent; color: #fff; border: 1px solid var(--border); }
+    .btn-outline:hover { border-color: var(--blue); color: var(--blue); }
+
+    /* Features */
+    .features { padding: 5rem 0; border-top: 1px solid var(--border); }
+    .features-title { text-align: center; font-size: 2rem; margin-bottom: 3rem; }
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; }
+    .feature { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 2rem; transition: all 0.3s; }
+    .feature:hover { transform: translateY(-5px); border-color: rgba(0,210,255,0.2); }
+    .feature-num { font-family: 'JetBrains Mono', monospace; font-size: 0.75rem; color: var(--text3); border: 1px solid var(--border); padding: 4px 10px; border-radius: 4px; display: inline-block; margin-bottom: 1rem; }
+    .feature h3 { font-size: 1.1rem; margin-bottom: 0.8rem; }
+    .feature p { font-size: 0.85rem; color: var(--text2); }
+
+    /* Stats */
+    .stats { padding: 3rem 0; text-align: center; }
+    .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 2rem; }
+    .stat-num { font-size: 2.5rem; font-weight: 800; color: var(--blue); }
+    .stat-label { font-size: 0.8rem; color: var(--text3); text-transform: uppercase; letter-spacing: 1px; }
+
+    /* CTA */
+    .cta { padding: 4rem 0; text-align: center; }
+    .cta h2 { font-size: 1.8rem; margin-bottom: 1rem; }
+    .cta p { color: var(--text2); margin-bottom: 2rem; }
+
+    /* Footer */
+    footer { text-align: center; padding: 3rem 2rem; border-top: 1px solid var(--border); }
+    footer p { font-size: 0.8rem; color: var(--text3); margin-bottom: 0.5rem; }
+    footer a { color: #fff; text-decoration: none; font-size: 0.85rem; transition: color 0.3s; }
+    footer a:hover { color: var(--blue); }
+
+    @media (max-width: 768px) {
+      nav { padding: 1rem 1.5rem; }
+      .hero-title { font-size: 2.5rem; }
+      .hero-desc { font-size: 1rem; }
+      .hero-btns { flex-direction: column; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="bg">
+    <div class="orb orb-red"></div>
+    <div class="orb orb-blue"></div>
+  </div>
+
+  <nav>
+    <div class="logo">POLY<span>FORGE</span></div>
+    <div class="nav-links">
+      <a href="https://github.com/DarkHacker2026/POLYFORGE" target="_blank">GitHub</a>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <p class="hero-tag">AMD Developer Hackathon · Unicorn Track</p>
+      <h1 class="hero-title">
+        <span class="hero-line">Any CUDA.</span>
+        <span class="hero-line">Any Hardware.</span>
+        <span class="hero-line">Verified.</span>
+      </h1>
+      <p class="hero-desc">
+        Drop in a CUDA kernel. Our AI comprehends it, our Oracle mathematically proves it,
+        and our compiler lowers it to any architecture — RISC-V GPUs, ARM, x86, and beyond.
+      </p>
+      <div class="hero-btns">
+        <a href="https://github.com/DarkHacker2026/POLYFORGE" target="_blank" class="btn btn-red">View on GitHub →</a>
+        <a href="https://github.com/DarkHacker2026/POLYFORGE/blob/main/README.md" target="_blank" class="btn btn-outline">Read the Docs</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div class="container">
+      <div class="stats-grid">
+        <div>
+          <div class="stat-num">5</div>
+          <div class="stat-label">Hardware Targets</div>
+        </div>
+        <div>
+          <div class="stat-num">12+</div>
+          <div class="stat-label">CUDA Patterns</div>
+        </div>
+        <div>
+          <div class="stat-num">100%</div>
+          <div class="stat-label">Oracle Verified</div>
+        </div>
+        <div>
+          <div class="stat-num">0</div>
+          <div class="stat-label">Silent Failures</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="container">
+      <h2 class="features-title">Why POLYFORGE?</h2>
+      <div class="features-grid">
+        <div class="feature">
+          <span class="feature-num">01</span>
+          <h3>LLM Comprehension</h3>
+          <p>Fireworks AI Kimi-2.6 reads raw CUDA and understands thread indexing, synchronization, and memory patterns. No manual annotation required.</p>
+        </div>
+        <div class="feature">
+          <span class="feature-num">02</span>
+          <h3>Zero-Trust Oracle</h3>
+          <p>Independent Clang AST simulation verifies all threads before touching silicon. Catches LLM hallucinations and data races that hardware can't reliably detect.</p>
+        </div>
+        <div class="feature">
+          <span class="feature-num">03</span>
+          <h3>Hardware Lowering</h3>
+          <p>Write CUDA once, run anywhere. Verified kernels lowered to RISC-V GPUs (Vortex), ARM Cortex-A72, ARM Cortex-M0, x86-64, and generic RISC-V.</p>
+        </div>
+        <div class="feature">
+          <span class="feature-num">04</span>
+          <h3>Race Condition Detection</h3>
+          <p>The Oracle detects Read-After-Write (RAW) and Write-After-Read (WAR) hazards that make parallel execution unsafe — before deployment.</p>
+        </div>
+        <div class="feature">
+          <span class="feature-num">05</span>
+          <h3>RTL Capability Analysis</h3>
+          <p>Scans Verilog/SystemVerilog RTL for thread_id, parallel_spawn, barrier_sync, and addressable_memory primitives. Know your hardware before compiling.</p>
+        </div>
+        <div class="feature">
+          <span class="feature-num">06</span>
+          <h3>Full Execution Transparency</h3>
+          <p>Every subprocess streams stdout/stderr in real-time. 100% visibility into what's happening at every stage of the pipeline.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta">
+    <div class="container">
+      <h2>Ready to forge?</h2>
+      <p>Explore the full source code, pipeline, and documentation on GitHub.</p>
+      <a href="https://github.com/DarkHacker2026/POLYFORGE" target="_blank" class="btn btn-red">Star the Repo →</a>
+    </div>
+  </section>
+
+  <footer>
+    <p>Built for the AMD Developer Hackathon ACT II — Unicorn Track</p>
+    <a href="https://github.com/DarkHacker2026/POLYFORGE" target="_blank">github.com/DarkHacker2026/POLYFORGE</a>
+  </footer>
+</body>
+</html>
