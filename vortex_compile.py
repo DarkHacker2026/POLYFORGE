@@ -546,10 +546,65 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str =
         # Shared memory kernels still skip (Oracle can't model shared state)
         if ck.has_shared:
             return True, "Shared memory kernel: numerical oracle skipped", True
+
+        # ── Race condition detection (RAW/WAR/WAW hazards) ──
+        # If a kernel writes to arr[i] and reads from arr[i+offset] where offset != 0,
+        # that's a data race between parallel threads.
+        race_hazards = []
+        for ap in ck.array_params:
+            # Find all array reads in the kernel body
+            read_offsets = set()
+            write_offsets = set()
+            for m_read in re.finditer(rf'\b{re.escape(ap.name)}\s*\[\s*([^\]]+?)\s*\]', kernels_code[0]):
+                idx_expr = m_read.group(1).strip()
+                # Check if this is a read (RHS of assignment) or write (LHS)
+                # Look at context around the match
+                pos = m_read.start()
+                # Find the enclosing statement
+                stmt_start = kernels_code[0].rfind(';', 0, pos)
+                stmt_end = kernels_code[0].find(';', pos)
+                if stmt_start < 0: stmt_start = 0
+                else: stmt_start += 1
+                if stmt_end < 0: stmt_end = len(kernels_code[0])
+                stmt = kernels_code[0][stmt_start:stmt_end].strip()
+                # Is this array access on the LHS (write) or RHS (read)?
+                lhs_match = re.match(rf'\b{re.escape(ap.name)}\s*\[\s*([^\]]+?)\s*\]\s*=', stmt)
+                if lhs_match:
+                    write_idx = lhs_match.group(1).strip()
+                    write_offsets.add(write_idx)
+                else:
+                    read_offsets.add(idx_expr)
+            # Check for hazards: write to arr[i] + read from arr[i±k]
+            idx_var_name = ir["thread_indexing"]["index_variable"]
+            for w_off in write_offsets:
+                for r_off in read_offsets:
+                    if w_off != r_off:
+                        # If both involve the thread index variable, it's a cross-thread race
+                        if idx_var_name in w_off or idx_var_name in r_off:
+                            race_hazards.append(
+                                f"RAW/WAR hazard on {ap.name}: thread i writes {ap.name}[{w_off}] "
+                                f"while reading {ap.name}[{r_off}] — data race between parallel threads"
+                            )
+        if race_hazards:
+            return False, (
+                f"Oracle REJECTED: Data race detected — {race_hazards[0]}. "
+                f"Kernel has Read-After-Write (RAW) or Write-After-Read (WAR) hazards "
+                f"that make parallel execution unsafe. Use __syncthreads() + shared memory "
+                f"or redesign the algorithm."
+            ), False
+
         # 2D/3D and complex expressions NOW VERIFIED via Clang AST evaluation
         dst = ck.array_params[-1]
         src_arrays = ck.array_params[:-1]
         errors = []
+
+        # ── Extract if-conditions from kernel body ──
+        # The Oracle must respect boundary checks like `if (i >= 1 && i < n - 1)`
+        if_conditions = []
+        for m_if in re.finditer(r'\bif\s*\(\s*(.+?)\s*\)\s*\{', kernels_code[0]):
+            cond = m_if.group(1).strip()
+            if_conditions.append(cond)
+
         for i in range(N):
             dst_base = init_regs.get(f'r{len(ck.array_params)}', 0)
             addr = dst_base + i * 4
@@ -584,6 +639,21 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str =
             if ck.is_3d:
                 env['threadIdx'] = type('dim3', (), {'x': i % grid_w, 'y': (i // grid_w) % grid_h, 'z': i // (grid_w * grid_h)})()
                 env['blockDim']  = type('dim3', (), {'x': grid_w, 'y': grid_h,  'z': 1})()
+
+            # ── Check if-conditions: skip threads where condition is false ──
+            thread_active = True
+            for cond in if_conditions:
+                try:
+                    cond_result = evaluate_clang_ast(cond, env)
+                    if not cond_result:
+                        thread_active = False
+                        break
+                except Exception:
+                    pass  # If we can't evaluate condition, assume true
+
+            if not thread_active:
+                # Thread doesn't execute the kernel body — data unchanged
+                continue
 
             for var in ir.get("local_variables", []):
                 if var['name'] in env:
