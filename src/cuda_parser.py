@@ -1632,8 +1632,7 @@ def kernel_to_oracle_ir(
 
     op_detected = None
     if rhs:
-        # Conservative auto-detection: only match simple binary ops
-        # between exactly two arrays, or SAXPY between three arrays.
+        # Auto-detection: match simple binary ops, SAXPY, and complex expressions
         rhs_clean = re.sub(r'\w+\s*\[.*?\]', 'ARR', rhs)
         operators = [c for c in rhs_clean if c in '+-*/']
         arr_count = rhs_clean.count('ARR')
@@ -1641,6 +1640,12 @@ def kernel_to_oracle_ir(
             op_detected = {'+': 'ADD', '-': 'SUB', '*': 'MUL', '/': 'DIV'}.get(operators[0])
         elif arr_count == 3 and len(operators) == 2 and '*' in rhs_clean and '+' in rhs_clean:
             op_detected = 'SAXPY'
+        elif arr_count >= 1 and len(operators) >= 1:
+            # Complex expression with array access and operators — Oracle can verify via Clang AST
+            op_detected = 'COMPLEX'
+        elif arr_count >= 1:
+            # Single array copy or expression
+            op_detected = 'COPY'
 
     # Build IR
     instructions: list[dict] = [

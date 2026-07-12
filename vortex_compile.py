@@ -543,10 +543,10 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str =
     def check_result(results, memory):
         if not ck.array_params:
             return True, "No arrays to check", True
-        if ck.has_syncthreads or ck.has_shared or ck.is_2d or ck.is_3d:
-            return True, "Complex kernel (shared mem/sync/2D/3D): numerical oracle skipped", True
-        if op_detected is None:
-            return True, "Non-trivial expression: numerical oracle skipped", True
+        # Shared memory kernels still skip (Oracle can't model shared state)
+        if ck.has_shared:
+            return True, "Shared memory kernel: numerical oracle skipped", True
+        # 2D/3D and complex expressions NOW VERIFIED via Clang AST evaluation
         dst = ck.array_params[-1]
         src_arrays = ck.array_params[:-1]
         errors = []
@@ -569,10 +569,21 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None, target: str =
                     env[sp.name] = 0
             if ck.name in test_params:
                 env.update(test_params[ck.name])
-            env['threadIdx'] = type('dim3', (), {'x': i, 'y': 0, 'z': 0})()
-            env['blockIdx']  = type('dim3', (), {'x': 0, 'y': 0, 'z': 0})()
-            env['blockDim']  = type('dim3', (), {'x': N, 'y': 1,  'z': 1})()
-            env['gridDim']   = type('dim3', (), {'x': 1, 'y': 1, 'z': 1})()
+            # Support 2D/3D indexing — compute x,y,z from linearized thread ID
+            grid_w = ck.grid_width or 1
+            grid_h = ck.grid_height or 1
+            env['threadIdx'] = type('dim3', (), {'x': i % 4, 'y': 0, 'z': 0})()
+            env['blockIdx']  = type('dim3', (), {'x': i // 4, 'y': 0, 'z': 0})()
+            env['blockDim']  = type('dim3', (), {'x': 4, 'y': 1,  'z': 1})()
+            env['gridDim']   = type('dim3', (), {'x': (N + 3) // 4, 'y': 1, 'z': 1})()
+            # For 2D kernels, also provide x/y decomposition
+            if ck.is_2d:
+                env['threadIdx'] = type('dim3', (), {'x': i % grid_w, 'y': i // grid_w, 'z': 0})()
+                env['blockDim']  = type('dim3', (), {'x': grid_w, 'y': grid_h,  'z': 1})()
+            # For 3D kernels
+            if ck.is_3d:
+                env['threadIdx'] = type('dim3', (), {'x': i % grid_w, 'y': (i // grid_w) % grid_h, 'z': i // (grid_w * grid_h)})()
+                env['blockDim']  = type('dim3', (), {'x': grid_w, 'y': grid_h,  'z': 1})()
 
             for var in ir.get("local_variables", []):
                 if var['name'] in env:
