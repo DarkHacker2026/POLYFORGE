@@ -322,8 +322,8 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     from test_llm_comprehension import PROMPT, run_wsl, running_in_wsl
     from cuda_parser import CUDA_UNEVALUABLE_EXPRS, build_body_stmts_from_ir
 
-    # Split source into per-kernel chunks (same as test_llm_comprehension.py)
-    matches = list(re.finditer(r'(?:template\s*<[^>]+>\s*)?\b__global__\b', cuda_code))
+    # Split source into per-kernel chunks (match __global__ AND __tile_global__)
+    matches = list(re.finditer(r'(?:template\s*<[^>]+>\s*)?\b(?:__global__|__tile_global__)\b', cuda_code))
     if not matches:
         kernels_code = [cuda_code]
     else:
@@ -343,10 +343,10 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
             print(f"[FAIL] --kernel '{kernel_filter}' not found in source.")
             return 1
 
-    print(f"         Sending {len(kernels_code[:1])} kernel chunk(s) to LLM...")
+    print(f"         Sending {len(kernels_code)} kernel chunk(s) to LLM...")
 
     all_irs = []
-    for idx, kcode in enumerate(kernels_code[:1]):
+    for idx, kcode in enumerate(kernels_code):
         formatted = PROMPT.format(kernel_code=kcode)
         try:
             # TASK 1: Use the lite parser model instead of the heavy candidate model
@@ -370,13 +370,15 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
                 print(f"[FAIL] Regex fallback also failed: {e2}")
                 return 1
 
-    # Kernel-drop warning
+    # Kernel-drop check: HARD ERROR on mismatch (Phase 3 fix)
     llm_count = len(all_irs)
     if len(global_markers) > llm_count:
         dropped = len(global_markers) - llm_count
-        print(f"\n[WARNING] Source has {len(global_markers)} kernel markers but LLM "
-              f"extracted {llm_count} ({dropped} possibly dropped).")
-        print(f"[WARNING] Use --kernel NAME to target one specific kernel.")
+        print(f"\n[FAIL] Source has {len(global_markers)} kernel markers but LLM "
+              f"extracted {llm_count} ({dropped} dropped).")
+        print(f"[FAIL] This is a HARD ERROR — kernel dropping is not allowed.")
+        print(f"[FAIL] Use --kernel NAME to target one specific kernel, or fix the LLM extraction.")
+        return 1
     else:
         print(f"         [OK] {llm_count} kernel(s) returned, no silent dropping detected")
 
@@ -537,11 +539,11 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
 
     def check_result(results, memory):
         if not ck.array_params:
-            return True, "No arrays to check"
+            return True, "No arrays to check", True
         if ck.has_syncthreads or ck.has_shared or ck.is_2d or ck.is_3d:
-            return True, "Complex kernel (shared mem/sync/2D/3D): numerical oracle skipped"
+            return True, "Complex kernel (shared mem/sync/2D/3D): numerical oracle skipped", True
         if op_detected is None:
-            return True, "Non-trivial expression: numerical oracle skipped"
+            return True, "Non-trivial expression: numerical oracle skipped", True
         dst = ck.array_params[-1]
         src_arrays = ck.array_params[:-1]
         errors = []
@@ -598,13 +600,13 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
                 else:
                     expected = int(evaluate_clang_ast(raw_rhs, env))
             except Exception as e:
-                return False, f"Failed to eval source truth '{raw_rhs}': {e}"
+                return False, f"Failed to eval source truth '{raw_rhs}': {e}", False
                 
             if got != expected:
                 errors.append(f"[{dst.name}][{i}]: got={got}, expected={expected}")
         if errors:
-            return False, "; ".join(errors[:3])
-        return True, f"All {N} results correct"
+            return False, "; ".join(errors[:3]), False
+        return True, f"All {N} results correct", False
 
     oracle_result = verify_parallel_kernel(
         instructions=instructions,
@@ -615,14 +617,17 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     )
     oracle_passed = oracle_result.get("ok", False)
     oracle_msg = oracle_result.get("message", "")
+    oracle_skipped = oracle_result.get("skipped", False)
 
     if oracle_passed:
-        print(f"         [OK] Oracle PASSED — {oracle_msg}")
+        if oracle_skipped:
+            print(f"         [SKIP] Oracle SKIPPED — {oracle_msg}")
+        else:
+            print(f"         [OK] Oracle VERIFIED — {oracle_msg}")
         print(f"         op_detected={op_detected}")
     else:
-        print(f"         [NOTE] Oracle FAILED — {oracle_msg}")
+        print(f"         [FAIL] Oracle FAILED — {oracle_msg}")
         print(f"         op_detected={op_detected}")
-        print(f"         Hardware result is the authoritative pass/fail.")
 
     # ── [4/5] Vortex C++ lowering ─────────────────────────────────────────
     print(f"\n[4/{total_stages}] Lowering to Vortex C++...", flush=True)
@@ -723,12 +728,22 @@ def run_pipeline(cuda_file: str, kernel_filter: str | None = None) -> int:
     cycles_val = int(m_cyc.group(1)) if m_cyc else -1
 
     # TASK 3: Format output to mimic native NVIDIA/CUDA
-    if result_val == 0:
+    # Exit code: 0 only if BOTH hardware AND oracle agree on success.
+    # Oracle "skipped" is treated as neutral (not a failure).
+    # Oracle explicit failure makes the exit code non-zero.
+    if result_val == 0 and (oracle_passed or oracle_skipped):
         # SUCCESS: Print clean CUDA-style output, hide SIMX debug logs
         print_cuda_style_success(ck.name, N, init_values, ck.array_params, cycles_val)
-        if not oracle_passed:
+        if oracle_skipped:
+            print(f"  [NOTE] Oracle was skipped — {oracle_msg}")
+        elif not oracle_passed:
             print(f"  [NOTE] Oracle advisory: {oracle_msg}")
         return 0
+    elif result_val == 0 and not oracle_passed and not oracle_skipped:
+        # Hardware passed but Oracle explicitly FAILED — this is a verification failure
+        error_msg = f"Oracle FAILED while hardware passed: {oracle_msg}"
+        print_cuda_style_failure(error_msg, r.stdout)
+        return 1
     else:
         # FAILURE: Show full debug output for debugging
         if r.returncode != 0 and result_val == -1:

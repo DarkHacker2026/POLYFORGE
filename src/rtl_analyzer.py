@@ -35,6 +35,12 @@ from pathlib import Path
 # Each capability is probed by searching for real signals/modules/decode logic
 # in the RTL source, or by running the actual hardware and observing output.
 
+# Behavioral verification status per capability.
+# CONFIRMED       = behavioral testbench passed, evidence attached
+# FALSE_POSITIVE  = structural name match, behavior tested and DISPROVEN
+# STRUCTURAL_ONLY = name match found, behavior NOT verified
+# ABSENT          = tested and failed (or no candidate found)
+# NOT_ANALYZED    = no candidate found, no test written
 CAPABILITIES = {
     "thread_id": {
         "description": "Thread/task identification (hardware can distinguish threads)",
@@ -48,6 +54,8 @@ CAPABILITIES = {
         ],
         "found": False,
         "evidence": [],
+        "behavioral_status": "NOT_ANALYZED",
+        "behavioral_evidence": "",
     },
     "parallel_spawn": {
         "description": "Parallel spawn/dispatch (hardware can launch multiple work units)",
@@ -61,6 +69,8 @@ CAPABILITIES = {
         ],
         "found": False,
         "evidence": [],
+        "behavioral_status": "NOT_ANALYZED",
+        "behavioral_evidence": "",
     },
     "barrier_sync": {
         "description": "Synchronization barrier (threads can wait for each other)",
@@ -72,6 +82,8 @@ CAPABILITIES = {
         ],
         "found": False,
         "evidence": [],
+        "behavioral_status": "NOT_ANALYZED",
+        "behavioral_evidence": "",
     },
     "addressable_memory": {
         "description": "Addressable memory (generated code can read/write global memory)",
@@ -86,6 +98,8 @@ CAPABILITIES = {
         ],
         "found": False,
         "evidence": [],
+        "behavioral_status": "NOT_ANALYZED",
+        "behavioral_evidence": "",
     },
 }
 

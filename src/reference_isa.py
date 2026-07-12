@@ -396,8 +396,13 @@ def verify_parallel_kernel(
     if check_fn is None:
         return {"ok": True, "thread_results": results, "memory": oracle.memory,
                 "message": "no check function provided"}
-    ok, msg = check_fn(results, oracle.memory)
-    return {"ok": ok, "thread_results": results, "memory": oracle.memory, "message": msg}
+    result = check_fn(results, oracle.memory)
+    if len(result) == 3:
+        ok, msg, skipped = result
+    else:
+        ok, msg = result
+        skipped = False
+    return {"ok": ok, "thread_results": results, "memory": oracle.memory, "message": msg, "skipped": skipped}
 
 
 # ─────────────────────────────────────────────────────────────────────────────

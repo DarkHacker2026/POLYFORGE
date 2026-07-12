@@ -69,6 +69,9 @@ _FALLBACK_SHARED_RE = re.compile(
 _FALLBACK_EXTERN_SHARED_RE = re.compile(
     r'extern\s+__shared__\s+([\w\*]+)\s+(\w+)\s*\[\s*\]\s*;'
 )
+_FALLBACK_SHARED_MEMORY_T_RE = re.compile(
+    r'(\w[\w\s\*]*?)\s*\*\s*(\w+)\s*=\s*SharedMemory\s*<\s*\w+\s*>\s*\(\s*\)\s*;'
+)
 
 
 def _strip_comments(source: str) -> str:
@@ -314,6 +317,12 @@ def normalize_and_repair_ir(ir: dict, raw_source: str) -> dict:
                 "size_expression": m.group(3).strip(),
             })
         for m in _FALLBACK_EXTERN_SHARED_RE.finditer(raw_source):
+            repaired_sm.append({
+                "name": m.group(2),
+                "base_type": m.group(1).replace('*', '').strip(),
+                "size_expression": "extern",
+            })
+        for m in _FALLBACK_SHARED_MEMORY_T_RE.finditer(raw_source):
             repaired_sm.append({
                 "name": m.group(2),
                 "base_type": m.group(1).replace('*', '').strip(),
