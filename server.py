@@ -478,6 +478,21 @@ def analyze_rtl(req: RtlAnalyzeRequest):
     )
 
 
+@app.get("/")
+def root():
+    return {
+        "service": "POLYFORGE API",
+        "version": "1.0.0",
+        "endpoints": {
+            "POST /api/compile": "Compile CUDA kernel",
+            "GET /api/targets": "List hardware targets",
+            "POST /api/rtl/analyze": "Analyze RTL capabilities",
+            "GET /api/health": "Health check",
+        },
+        "docs": "/docs",
+    }
+
+
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
